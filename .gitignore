@@ -1,0 +1,11 @@
+.build/
+dist/
+.DS_Store
+.cursor/
+*.swp
+*~
+.idea/
+.vscode/
+*.xcuserstate
+.env
+.env.*
