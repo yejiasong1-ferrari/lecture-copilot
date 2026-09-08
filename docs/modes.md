@@ -1,6 +1,6 @@
 # Lecture Copilot Mode Spec
 
-这份文档定义 Lecture Copilot V0.1 每个快捷键模式的稳定输出规则。以后如果输出跑偏，优先检查这里和 `PromptStore.swift` / `prompts.json` 是否一致。
+这份文档定义 Lecture Copilot v1.0 每个快捷键模式的稳定输出规则。以后如果输出跑偏，优先检查这里和 `PromptStore.swift` / `prompts.json` 是否一致。
 
 ## Translate: Shift + Left
 

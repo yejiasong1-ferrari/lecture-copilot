@@ -1,6 +1,10 @@
 # Lecture Copilot
 
-**不用 API · 不消耗 tokens · 复制三行就能装**
+**v1.0 · For Mac · 不用 API · 不消耗 tokens**
+
+[![macOS](https://img.shields.io/badge/platform-macOS%2014%2B-black?logo=apple)](https://github.com/yejiasong1-ferrari/lecture-copilot)
+[![version](https://img.shields.io/badge/version-v1.0-0A84FF)](https://github.com/yejiasong1-ferrari/lecture-copilot/releases/tag/v1.0.0)
+[![license](https://img.shields.io/badge/Windows-not%20supported-lightgrey)](https://github.com/yejiasong1-ferrari/lecture-copilot)
 
 上课听到一半，幻灯片全是英文，选择题还在倒计时——
 
