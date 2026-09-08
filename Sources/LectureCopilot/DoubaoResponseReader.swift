@@ -6,6 +6,8 @@ final class DoubaoResponseReader {
     private let chatAppNames = ["豆包", "Doubao"]
     private let browserAppNames = ["豆包浏览器", "Doubao Browser"]
     private let copyIconFinder = CopyIconFinder()
+    private let defaultCopyXRatio: CGFloat = 0.248
+    private var cachedCopyLocation: CGPoint?
 
     var restoreClassApp: (() -> Void)?
     var onPartialAnswer: ((String) -> Void)?
@@ -30,74 +32,152 @@ final class DoubaoResponseReader {
     }
 
     func captureCompletedResponse(prompt: String, action: CopilotAction, timeout: TimeInterval = 40) -> String? {
-        _ = timeout
+        let copyTimeout = min(max(timeout, 0.6), 1.4)
+        let startedAt = Date()
         let normalizedPrompt = normalize(prompt)
-        restoreClassApp?()
-        let baselineText = conversationBaselineText()
-        DebugLog.write("capture: one-shot extract, no peek loop")
-
-        if let background = ocrAnswer(
-            in: captureDoubaoWindow(region: .answerBand),
-            baselineText: baselineText,
-            prompt: normalizedPrompt,
-            action: action
-        ), ResponseSanitizer.isPlausibleAnswer(background, prompt: normalizedPrompt, action: action) {
-            DebugLog.write("capture: extracted from background window (\(background.count) chars)")
-            publish(background)
-            return background
-        }
-
-        DebugLog.write("capture: one extract visit to Doubao")
+        DebugLog.write("capture: Copy-first extract; answer OCR disabled")
         activateChatApp()
-        _ = AXAccess.waitUntil(timeout: 0.6) {
-            captureDoubaoWindow(region: .conversation) != nil
-        }
+        defer { restoreClassApp?() }
 
-        var best = ""
-        var bestScore = 0
-        func consider(_ candidate: String, region: OCRRegion, pass: Int) {
-            let score = ResponseSanitizer.score(candidate, prompt: normalizedPrompt, action: action)
-            if score > bestScore || (score == bestScore && candidate.count > best.count + 6) {
-                best = candidate
-                bestScore = score
-                publish(candidate)
-                DebugLog.write("capture: extract \(region) pass \(pass) (\(candidate.count) chars, score \(score))")
-            }
-        }
-
-        for region in [OCRRegion.conversation, .answerBand] {
-            if let candidate = ocrAnswer(
-                in: captureDoubaoWindow(region: region),
-                baselineText: baselineText,
-                prompt: normalizedPrompt,
-                action: action
-            ) {
-                consider(candidate, region: region, pass: 1)
-            }
+        guard AXAccess.waitUntil(timeout: 0.8, interval: 0.05, condition: {
+            guard let app = self.runningDoubaoProcesses().first else { return false }
+            return NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier
+        }) else {
+            DebugLog.write("capture: Doubao did not become frontmost")
+            return nil
         }
 
         scrollToBottomOfDoubaoConversation()
-        Thread.sleep(forTimeInterval: 0.25)
+        hoverLatestAnswerArea()
+        Thread.sleep(forTimeInterval: 0.16)
 
-        for region in [OCRRegion.answerBand, .conversation] {
-            if let candidate = ocrAnswer(
-                in: captureDoubaoWindow(region: region),
-                baselineText: baselineText,
+        if let target = largestDoubaoWindow(),
+           let cachedCopyLocation {
+            let point = CGPoint(
+                x: target.bounds.minX + target.bounds.width * cachedCopyLocation.x,
+                y: target.bounds.minY + target.bounds.height * cachedCopyLocation.y
+            )
+            if let copied = copyByClick(
+                at: point,
                 prompt: normalizedPrompt,
-                action: action
+                action: action,
+                timeout: min(copyTimeout, 0.4),
+                source: "cached"
             ) {
-                consider(candidate, region: region, pass: 2)
+                DebugLog.write(String(format: "capture: cached Copy succeeded (%d chars, %.3fs)", copied.count, Date().timeIntervalSince(startedAt)))
+                return copied
             }
+            DebugLog.write("capture: cached Copy missed; trying visual search")
         }
 
-        restoreClassApp?()
-
-        if ResponseSanitizer.isPlausibleAnswer(best, prompt: normalizedPrompt, action: action) {
-            DebugLog.write("capture: using one-shot OCR (\(best.count) chars)")
-            return best
+        hoverLatestAnswerArea()
+        Thread.sleep(forTimeInterval: 0.12)
+        if let copied = copyUsingVisibleIcon(
+            prompt: normalizedPrompt,
+            action: action,
+            timeout: min(copyTimeout, 0.8)
+        ) {
+            DebugLog.write(String(format: "capture: visual Copy succeeded (%d chars, %.3fs)", copied.count, Date().timeIntervalSince(startedAt)))
+            return copied
         }
 
-        DebugLog.write("capture: no usable Doubao answer")
+        DebugLog.write("capture: Copy unavailable; response may still be generating")
+        return nil
+    }
+
+    private func copyUsingVisibleIcon(
+        prompt: String,
+        action: CopilotAction,
+        timeout: TimeInterval
+    ) -> String? {
+        guard let target = largestDoubaoWindow(),
+              let image = CGWindowListCreateImage(
+                .null,
+                .optionIncludingWindow,
+                target.windowID,
+                [.bestResolution, .boundsIgnoreFraming]
+              ) else {
+            DebugLog.write("capture: could not capture Copy search region")
+            return nil
+        }
+
+        saveCopySearchDebugImage(image)
+        guard let finder = copyIconFinder,
+              let match = finder.match(
+                in: image,
+                windowBounds: target.bounds,
+                preferredXRatio: cachedCopyLocation?.x ?? defaultCopyXRatio
+              ) else {
+            DebugLog.write("capture: visual Copy icon not found")
+            return nil
+        }
+
+        let matchedLocation = CGPoint(
+            x: (match.point.x - target.bounds.minX) / target.bounds.width,
+            y: (match.point.y - target.bounds.minY) / target.bounds.height
+        )
+        DebugLog.write(String(
+            format: "capture: cached Copy location x=%.3f y=%.3f score=%.3f",
+            matchedLocation.x,
+            matchedLocation.y,
+            match.score
+        ))
+
+        let copied = copyByClick(
+            at: match.point,
+            prompt: prompt,
+            action: action,
+            timeout: timeout,
+            source: "visual"
+        )
+        if copied != nil {
+            cachedCopyLocation = matchedLocation
+        }
+        return copied
+    }
+
+    private func saveCopySearchDebugImage(_ image: CGImage) {
+        let url = DebugLog.directory.appendingPathComponent("last-copy-search.png")
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        guard let png = bitmap.representation(using: .png, properties: [:]) else { return }
+        try? png.write(to: url, options: .atomic)
+    }
+
+    private func copyByClick(
+        at point: CGPoint,
+        prompt: String,
+        action: CopilotAction,
+        timeout: TimeInterval,
+        source: String
+    ) -> String? {
+        let sentinel = "lecture-copilot-copy-\(UUID().uuidString)"
+        guard let previousChangeCount = MainPasteboard.prepareSentinel(sentinel) else {
+            DebugLog.write("capture: could not prepare clipboard for \(source) Copy")
+            return nil
+        }
+
+        CGWarpMouseCursorPosition(point)
+        Thread.sleep(forTimeInterval: 0.08)
+        click(at: point)
+
+        let startedAt = Date()
+        while Date().timeIntervalSince(startedAt) < timeout {
+            Thread.sleep(forTimeInterval: 0.05)
+            guard MainPasteboard.changeCount() != previousChangeCount,
+                  let value = MainPasteboard.string() else {
+                continue
+            }
+
+            let copied = normalize(value)
+            guard !copied.isEmpty, copied != sentinel else { continue }
+            guard copied != normalize(prompt) else {
+                DebugLog.write("capture: \(source) Copy returned the prompt instead of the answer")
+                return nil
+            }
+            return copied
+        }
+
+        DebugLog.write("capture: \(source) Copy did not update clipboard")
         return nil
     }
 
@@ -187,9 +267,7 @@ final class DoubaoResponseReader {
         }
 
         DebugLog.write(String(format: "Copy icon click at %@ score %.3f", "\(match.point)", match.score))
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        let previousChangeCount = pasteboard.changeCount
+        let previousChangeCount = MainPasteboard.clearAndChangeCount()
 
         activateChatApp()
         Thread.sleep(forTimeInterval: 0.12)
@@ -199,8 +277,8 @@ final class DoubaoResponseReader {
         let startedAt = Date()
         while Date().timeIntervalSince(startedAt) < 1.2 {
             Thread.sleep(forTimeInterval: 0.12)
-            if pasteboard.changeCount != previousChangeCount,
-               let value = pasteboard.string(forType: .string),
+            if MainPasteboard.changeCount() != previousChangeCount,
+               let value = MainPasteboard.string(),
                !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 copied = value
                 break
@@ -282,9 +360,7 @@ final class DoubaoResponseReader {
         DebugLog.write("Doubao copy: found \(buttons.count) conversation copy buttons")
 
         for (index, button) in buttons.enumerated() {
-            let pasteboard = NSPasteboard.general
-            pasteboard.clearContents()
-            let previousChangeCount = pasteboard.changeCount
+            let previousChangeCount = MainPasteboard.clearAndChangeCount()
             DebugLog.write("Doubao copy: pressing button \(index): \(elementDebugLabel(button))")
 
             guard AXUIElementPerformAction(button, kAXPressAction as CFString) == .success else {
@@ -295,8 +371,8 @@ final class DoubaoResponseReader {
             var copied: String?
             while Date().timeIntervalSince(startedAt) < 2.0 {
                 Thread.sleep(forTimeInterval: 0.2)
-                if pasteboard.changeCount != previousChangeCount,
-                   let value = pasteboard.string(forType: .string),
+                if MainPasteboard.changeCount() != previousChangeCount,
+                   let value = MainPasteboard.string(),
                    !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     copied = value
                     break
@@ -399,10 +475,10 @@ final class DoubaoResponseReader {
 
     private func scrollToBottomOfDoubaoConversation() {
         clickDoubaoReadingArea()
-        Thread.sleep(forTimeInterval: 0.15)
-        for _ in 0..<3 {
-            scrollDoubaoConversation(delta: -24)
-            Thread.sleep(forTimeInterval: 0.05)
+        Thread.sleep(forTimeInterval: 0.08)
+        for _ in 0..<2 {
+            scrollDoubaoConversation(delta: -40)
+            Thread.sleep(forTimeInterval: 0.03)
         }
     }
 
@@ -1172,5 +1248,39 @@ private extension String {
         }
 
         return String(self[index...])
+    }
+}
+
+private enum MainPasteboard {
+    static func changeCount() -> Int {
+        onMain { NSPasteboard.general.changeCount }
+    }
+
+    static func string() -> String? {
+        onMain { NSPasteboard.general.string(forType: .string) }
+    }
+
+    static func prepareSentinel(_ sentinel: String) -> Int? {
+        onMain {
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            guard pasteboard.setString(sentinel, forType: .string) else { return nil }
+            return pasteboard.changeCount
+        }
+    }
+
+    static func clearAndChangeCount() -> Int {
+        onMain {
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            return pasteboard.changeCount
+        }
+    }
+
+    private static func onMain<T>(_ work: () -> T) -> T {
+        if Thread.isMainThread {
+            return work()
+        }
+        return DispatchQueue.main.sync(execute: work)
     }
 }

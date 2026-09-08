@@ -7,21 +7,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusController.delegate = self
-        statusController.render(classModeEnabled: copilot.classModeEnabled)
+        renderMenu()
 
         hotKeyController.onHotKey = { [weak self] event in
             self?.copilot.handle(event)
-            self?.statusController.render(classModeEnabled: self?.copilot.classModeEnabled ?? false)
+            self?.renderMenu()
         }
         hotKeyController.shouldHandleReturnKey = { [weak self] in
             self?.copilot.shouldHandleReturnKey() ?? false
         }
 
-        copilot.onClassModeChanged = { [weak self] enabled in
-            self?.statusController.render(classModeEnabled: enabled)
+        copilot.onClassModeChanged = { [weak self] _ in
+            self?.renderMenu()
+        }
+        copilot.onPendingReadChanged = { [weak self] enabled in
+            self?.hotKeyController.setReturnHotKeyEnabled(enabled)
+        }
+        copilot.onSessionChanged = { [weak self] in
+            self?.renderMenu()
         }
 
+        copilot.bindHUD()
         hotKeyController.start()
+        copilot.presentSessionIfNeeded()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -76,5 +84,35 @@ extension AppDelegate: StatusControllerDelegate {
 
     func statusControllerDidChooseShortcutSettings(_ statusController: StatusController) {
         copilot.showShortcutSettings()
+    }
+
+    func statusControllerDidChooseStartClass(_ statusController: StatusController) {
+        copilot.startClass()
+        renderMenu()
+    }
+
+    func statusControllerDidChooseEndClass(_ statusController: StatusController) {
+        copilot.endClass()
+        renderMenu()
+    }
+
+    func statusControllerDidToggleRecordTranslate(_ statusController: StatusController) {
+        copilot.toggleRecordTranslate()
+        renderMenu()
+    }
+
+    func statusControllerDidChooseNotesFolder(_ statusController: StatusController) {
+        copilot.openNotesFolder()
+    }
+}
+
+private extension AppDelegate {
+    func renderMenu() {
+        statusController.render(
+            classModeEnabled: copilot.classModeEnabled,
+            sessionRunning: copilot.isSessionRunning,
+            recordTranslate: copilot.recordTranslateEnabled,
+            noteCount: copilot.sessionNoteCount
+        )
     }
 }

@@ -1,10 +1,25 @@
 import AppKit
+import UniformTypeIdentifiers
 
 final class LectureCopilotController {
     var onClassModeChanged: ((Bool) -> Void)?
+    var onPendingReadChanged: ((Bool) -> Void)?
+    var onSessionChanged: (() -> Void)?
 
     private(set) var classModeEnabled = true {
         didSet { onClassModeChanged?(classModeEnabled) }
+    }
+
+    var isSessionRunning: Bool {
+        sessionStore.session != nil && sessionStore.session?.endTime == nil
+    }
+
+    var recordTranslateEnabled: Bool {
+        sessionStore.recordTranslate
+    }
+
+    var sessionNoteCount: Int {
+        sessionStore.session?.recordedCount ?? 0
     }
 
     private let prompts = PromptStore()
@@ -13,12 +28,23 @@ final class LectureCopilotController {
     private let floatingWindow = FloatingAnswerWindow()
     private let capture = ScreenshotCapture()
     private let imageCache = CapturedImageCache(ttl: 30)
+    private let sessionStore = ClassSessionStore()
 
     private var previousActiveApp: PreviousActiveApp?
     private var lastShiftUpAt: Date?
     private var shiftUpSequence = 0
     private var isBusy = false
-    private var pendingRead: PendingDoubaoRead?
+    private var sessionTimer: Timer?
+    private var pendingInteractionID: UUID?
+    private var lastExtractAt: Date?
+    private var pendingRead: PendingDoubaoRead? {
+        didSet {
+            let enabled = pendingRead != nil
+            DispatchQueue.main.async { [weak self] in
+                self?.onPendingReadChanged?(enabled)
+            }
+        }
+    }
 
     private struct PendingDoubaoRead {
         let prompt: String
@@ -42,6 +68,14 @@ final class LectureCopilotController {
 
     func toggleClassMode() {
         classModeEnabled.toggle()
+        if !classModeEnabled {
+            pendingRead = nil
+            if !isSessionRunning {
+                floatingWindow.close()
+            }
+        } else {
+            presentSessionIfNeeded()
+        }
     }
 
     func shouldHandleReturnKey() -> Bool {
@@ -77,6 +111,9 @@ final class LectureCopilotController {
 
         if action == .backToClass {
             backToClass()
+            return
+        }
+        if action == .classSummary {
             return
         }
 
@@ -133,11 +170,169 @@ final class LectureCopilotController {
         Explain: Shift + Right
         Direct Answer: Shift + Up
         Say in Class: Shift + Up, Up within 600ms
-        Read Doubao Answer: Return
+        Read Doubao Answer: Shift + Return
         Back to Class: Shift + Down
         """
         alert.addButton(withTitle: "OK")
         alert.runModal()
+    }
+
+    func bindHUD() {
+        floatingWindow.onStartClass = { [weak self] in self?.startClass() }
+        floatingWindow.onEndClass = { [weak self] in self?.endClass() }
+        floatingWindow.onReviewNote = { [weak self] in self?.reviewClassNote() }
+        floatingWindow.onSaveNote = { [weak self] in self?.saveClassNote() }
+    }
+
+    func presentSessionIfNeeded() {
+        guard classModeEnabled else { return }
+        if isSessionRunning {
+            startSessionTimerIfNeeded()
+            floatingWindow.showClassSession(sessionStore.snapshot())
+        } else if sessionStore.session?.summary?.isEmpty == false {
+            floatingWindow.showClassSession(sessionStore.snapshot(), detail: sessionStore.session?.summary)
+        } else {
+            floatingWindow.showClassSession(.idle)
+        }
+    }
+
+    func startClass() {
+        if sessionStore.session?.summary != nil, sessionStore.session?.savePath == nil {
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.messageText = "Start a new class?"
+            alert.informativeText = "上一节课的总结还没保存。"
+            alert.addButton(withTitle: "Start New Class")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        } else if isSessionRunning {
+            return
+        }
+
+        _ = sessionStore.start()
+        pendingInteractionID = nil
+        startSessionTimerIfNeeded()
+        floatingWindow.showClassSession(sessionStore.snapshot())
+        onSessionChanged?()
+        DebugLog.write("Class session HUD started")
+    }
+
+    func endClass() {
+        guard isSessionRunning else { return }
+        guard !isBusy else {
+            floatingWindow.showLoading("等当前操作结束后再结束这节课。", action: .classSummary)
+            return
+        }
+
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "End Class?"
+        alert.informativeText = "停止计时，并把这节课的记录发给豆包做总结。"
+        alert.addButton(withTitle: "End Class")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        _ = sessionStore.end()
+        stopSessionTimer()
+        onSessionChanged?()
+        summarizeClass()
+    }
+
+    func toggleRecordTranslate() {
+        sessionStore.recordTranslate.toggle()
+        onSessionChanged?()
+    }
+
+    func openNotesFolder() {
+        NSWorkspace.shared.open(sessionStore.notesRoot)
+    }
+
+    func reviewClassNote() {
+        guard let url = sessionStore.writePreviewMarkdown() else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    func saveClassNote() {
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.directoryURL = sessionStore.notesRoot
+        panel.nameFieldStringValue = sessionStore.defaultSaveURL().lastPathComponent
+        panel.title = "Save Class Note"
+        panel.message = "保存为 Markdown。截图会放在同名的 shots 文件夹里。"
+        panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try sessionStore.writeNote(to: url)
+            floatingWindow.showClassSession(
+                sessionStore.snapshot(),
+                detail: "已保存到\n\(url.path)"
+            )
+            onSessionChanged?()
+        } catch {
+            floatingWindow.showLoading("保存失败：\(error.localizedDescription)", action: .classSummary)
+        }
+    }
+
+    private func summarizeClass() {
+        savePreviousActiveApp()
+        let payload = sessionStore.doubaoPayload()
+        let prompt = prompts.prompt(for: "classSummary") + "\n\n" + payload
+        isBusy = true
+        var summarizing = sessionStore.snapshot()
+        summarizing.phase = .summarizing
+        floatingWindow.showClassSession(summarizing)
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            guard Permissions.hasAccessibilityPermission() else {
+                DispatchQueue.main.async {
+                    self.isBusy = false
+                    self.floatingWindow.showLoading("需要辅助功能权限才能让豆包总结。", action: .classSummary)
+                    Permissions.showAutomationAlert()
+                }
+                return
+            }
+
+            let result = self.doubao.sendText(prompt, restoreFrontmost: { [weak self] in
+                self?.backToClass()
+            })
+            guard result.success else {
+                DispatchQueue.main.async {
+                    self.isBusy = false
+                    self.backToClass()
+                    self.floatingWindow.showAnswer(result.userMessage, action: .classSummary)
+                }
+                return
+            }
+
+            self.backToClass()
+            self.updatePendingRead(prompt: prompt, action: .classSummary, response: nil)
+            DebugLog.write("class summary: sent, waiting for Shift+Return to copy from Doubao")
+            DispatchQueue.main.async {
+                self.isBusy = false
+                self.floatingWindow.showLoading(
+                    "已发给豆包做总结。生成完成后按 Shift+Return，会切到豆包并复制。",
+                    action: .classSummary
+                )
+                self.onSessionChanged?()
+            }
+        }
+    }
+
+    private func startSessionTimerIfNeeded() {
+        sessionTimer?.invalidate()
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self, self.isSessionRunning else { return }
+            self.floatingWindow.tickClassSession(self.sessionStore.snapshot())
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        sessionTimer = timer
+    }
+
+    private func stopSessionTimer() {
+        sessionTimer?.invalidate()
+        sessionTimer = nil
     }
 
     private func handleShiftUp() {
@@ -257,10 +452,12 @@ final class LectureCopilotController {
 
         backToClass()
         updatePendingRead(prompt: prompt, action: action, response: nil)
-        DebugLog.write("capture: sent, waiting for manual Return to extract")
+        pendingInteractionID = sessionStore.beginInteraction(action: action)
+        onSessionChanged?()
+        DebugLog.write("capture: sent, waiting for Shift+Return to copy from Doubao")
         DispatchQueue.main.async { [weak self] in
             self?.floatingWindow.showLoading(
-                "已发送到豆包。生成完成后按 Return 读取。",
+                "已发送到豆包。生成完成后按 Shift+Return，会切到豆包并复制回答。",
                 action: action
             )
         }
@@ -275,8 +472,14 @@ final class LectureCopilotController {
     private func retryPendingRead() {
         guard shouldHandleReturnKey(), let pendingRead else { return }
         guard !isBusy else { return }
+        if let lastExtractAt, Date().timeIntervalSince(lastExtractAt) < 5 {
+            DebugLog.write("Extract ignored: Shift+Return within 5s cooldown")
+            return
+        }
 
+        lastExtractAt = Date()
         isBusy = true
+        savePreviousActiveApp()
         DebugLog.write("Extract Doubao answer: \(pendingRead.action)")
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             self?.readExistingAnswer(prompt: pendingRead.prompt, action: pendingRead.action)
@@ -301,13 +504,35 @@ final class LectureCopilotController {
         }
 
         installResponseCallbacks(prompt: prompt, action: action)
-        let captured = responseReader.captureCompletedResponse(prompt: prompt, action: action, timeout: 25)
-        let response = OutputQualityValidator.prepareForDisplay(captured, action: action, prompt: prompt)
+        let captured = responseReader.captureCompletedResponse(prompt: prompt, action: action, timeout: 1.2)
+        let response = OutputQualityValidator.prepareCopiedForDisplay(captured, action: action, prompt: prompt)
+
+        if action == .classSummary {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if let response {
+                    self.sessionStore.setSummary(response)
+                    self.pendingRead = nil
+                    self.floatingWindow.showClassSession(self.sessionStore.snapshot(), detail: response)
+                    self.onSessionChanged?()
+                } else {
+                    self.floatingWindow.showAnswer(
+                        "Still generating...\n\n豆包可能还在生成，或 Copy 按钮尚未出现。稍后再按一次 Shift+Return。",
+                        action: action
+                    )
+                }
+            }
+            return
+        }
+
         updatePendingRead(prompt: prompt, action: action, response: response)
+        if let response, let pendingInteractionID {
+            sessionStore.finishInteraction(id: pendingInteractionID, answer: response)
+            onSessionChanged?()
+        }
 
         DispatchQueue.main.async { [weak self] in
-            self?.backToClass()
-            self?.floatingWindow.showAnswer(response ?? "还是没有读到完整回答。\n\n请确认豆包窗口里已经生成答案；如果答案可见但小窗读不到，说明当前豆包界面没有把正文暴露出来，需要继续适配读取逻辑。", action: action)
+            self?.floatingWindow.showAnswer(response ?? "Still generating...\n\n豆包可能还在生成，或 Copy 按钮尚未出现。稍后再按一次 Shift+Return。", action: action)
         }
     }
 
@@ -335,7 +560,7 @@ final class LectureCopilotController {
             pendingRead = PendingDoubaoRead(
                 prompt: prompt,
                 action: action,
-                expiresAt: Date().addingTimeInterval(180)
+                expiresAt: Date().addingTimeInterval(action == .classSummary ? 480 : 180)
             )
         } else {
             pendingRead = nil

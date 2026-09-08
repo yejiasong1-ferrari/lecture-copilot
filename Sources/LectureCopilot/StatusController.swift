@@ -9,6 +9,10 @@ protocol StatusControllerDelegate: AnyObject {
     func statusControllerDidChooseInspectDoubao(_ statusController: StatusController)
     func statusControllerDidChooseTranslateLastCapture(_ statusController: StatusController)
     func statusControllerDidChooseShortcutSettings(_ statusController: StatusController)
+    func statusControllerDidChooseStartClass(_ statusController: StatusController)
+    func statusControllerDidChooseEndClass(_ statusController: StatusController)
+    func statusControllerDidToggleRecordTranslate(_ statusController: StatusController)
+    func statusControllerDidChooseNotesFolder(_ statusController: StatusController)
 }
 
 final class StatusController {
@@ -16,7 +20,12 @@ final class StatusController {
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
-    func render(classModeEnabled: Bool) {
+    func render(
+        classModeEnabled: Bool,
+        sessionRunning: Bool = false,
+        recordTranslate: Bool = false,
+        noteCount: Int = 0
+    ) {
         statusItem.length = NSStatusItem.squareLength
         statusItem.button?.title = ""
         statusItem.button?.imagePosition = .imageOnly
@@ -36,12 +45,30 @@ final class StatusController {
         menu.addItem(classModeItem)
         menu.addItem(.separator())
 
+        menu.addItem(.sectionHeader(title: "Class Session"))
+        if sessionRunning {
+            menu.addItem(targetedItem("End Class", selector: #selector(endClass)))
+            menu.addItem(disabledItem("\(noteCount) notes saved", shortcut: ""))
+        } else {
+            menu.addItem(targetedItem("Start Class", selector: #selector(startClass)))
+        }
+        let translateItem = NSMenuItem(
+            title: "Record Translate",
+            action: #selector(toggleRecordTranslate),
+            keyEquivalent: ""
+        )
+        translateItem.target = self
+        translateItem.state = recordTranslate ? .on : .off
+        menu.addItem(translateItem)
+        menu.addItem(targetedItem("Notes Folder", selector: #selector(openNotesFolder)))
+        menu.addItem(.separator())
+
         menu.addItem(.sectionHeader(title: "Actions"))
         menu.addItem(actionItem("Translate", shortcut: "⇧←", action: .translate))
         menu.addItem(actionItem("Explain", shortcut: "⇧→", action: .explain))
         menu.addItem(actionItem("Direct Answer", shortcut: "⇧↑", action: .directAnswer))
         menu.addItem(actionItem("Say in Class", shortcut: "⇧↑↑", action: .sayInClass))
-        menu.addItem(disabledItem("Read Doubao Answer", shortcut: "↩"))
+        menu.addItem(disabledItem("Read Doubao Answer", shortcut: "⇧↩"))
         menu.addItem(actionItem("Back to Class", shortcut: "⇧↓", action: .backToClass))
         menu.addItem(.separator())
 
@@ -134,6 +161,22 @@ final class StatusController {
 
     @objc private func openShortcutSettings() {
         delegate?.statusControllerDidChooseShortcutSettings(self)
+    }
+
+    @objc private func startClass() {
+        delegate?.statusControllerDidChooseStartClass(self)
+    }
+
+    @objc private func endClass() {
+        delegate?.statusControllerDidChooseEndClass(self)
+    }
+
+    @objc private func toggleRecordTranslate() {
+        delegate?.statusControllerDidToggleRecordTranslate(self)
+    }
+
+    @objc private func openNotesFolder() {
+        delegate?.statusControllerDidChooseNotesFolder(self)
     }
 }
 

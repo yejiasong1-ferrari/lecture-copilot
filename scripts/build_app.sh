@@ -20,6 +20,7 @@ mkdir -p "$MACOS" "$RESOURCES"
 cp "$ROOT/.build/release/LectureCopilot" "$MACOS/Lecture Copilot"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/Resources/copy-icon-template.png" "$RESOURCES/copy-icon-template.png"
+xattr -cr "$APP"
 codesign --force --deep --sign - --identifier com.local.lecturecopilot "$APP"
 
 echo "Built: $APP"

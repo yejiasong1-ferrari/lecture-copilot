@@ -7,8 +7,8 @@ final class HotKeyController {
     var shouldHandleReturnKey: (() -> Bool)?
 
     private var hotKeyRefs: [EventHotKeyRef?] = []
+    private var returnHotKeyRef: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
-    private var returnKeyMonitors: [Any] = []
 
     func start() {
         installHandler()
@@ -16,11 +16,11 @@ final class HotKeyController {
         registerHotKey(keyCode: UInt32(kVK_RightArrow), id: 2, action: .shiftRight)
         registerHotKey(keyCode: UInt32(kVK_UpArrow), id: 3, action: .shiftUp)
         registerHotKey(keyCode: UInt32(kVK_DownArrow), id: 4, action: .shiftDown)
-        installReturnKeyMonitor()
         DebugLog.write("Carbon hotkeys registered")
     }
 
     func stop() {
+        setReturnHotKeyEnabled(false)
         for hotKeyRef in hotKeyRefs {
             if let hotKeyRef {
                 UnregisterEventHotKey(hotKeyRef)
@@ -32,40 +32,34 @@ final class HotKeyController {
             RemoveEventHandler(eventHandler)
         }
         eventHandler = nil
-
-        for monitor in returnKeyMonitors {
-            NSEvent.removeMonitor(monitor)
-        }
-        returnKeyMonitors.removeAll()
     }
 
-    private func installReturnKeyMonitor() {
-        let handler: (NSEvent) -> Void = { [weak self] event in
-            self?.handleReturnKey(event)
+    func setReturnHotKeyEnabled(_ enabled: Bool) {
+        if enabled {
+            guard returnHotKeyRef == nil else { return }
+            let hotKeyID = EventHotKeyID(signature: fourCharCode("LCP0"), id: 5)
+            var hotKeyRef: EventHotKeyRef?
+            let status = RegisterEventHotKey(
+                UInt32(kVK_Return),
+                UInt32(shiftKey),
+                hotKeyID,
+                GetApplicationEventTarget(),
+                0,
+                &hotKeyRef
+            )
+            if status == noErr {
+                returnHotKeyRef = hotKeyRef
+                DebugLog.write("Registered pending Shift+Return hotkey")
+            } else {
+                DebugLog.write("Register pending Shift+Return hotkey failed: \(status)")
+            }
+            return
         }
 
-        if let monitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: handler) {
-            returnKeyMonitors.append(monitor)
-        }
-
-        if let localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
-            self?.handleReturnKey(event)
-            return event
-        }) {
-            returnKeyMonitors.append(localMonitor)
-        }
-    }
-
-    private func handleReturnKey(_ event: NSEvent) {
-        let keyCode = Int(event.keyCode)
-        guard keyCode == kVK_Return || keyCode == kVK_ANSI_KeypadEnter else { return }
-
-        let disallowedModifiers: NSEvent.ModifierFlags = [.command, .option, .control]
-        guard event.modifierFlags.intersection(disallowedModifiers).isEmpty else { return }
-        guard shouldHandleReturnKey?() == true else { return }
-
-        DebugLog.write("Return key received for pending Doubao read")
-        onHotKey?(.returnKey)
+        guard let returnHotKeyRef else { return }
+        UnregisterEventHotKey(returnHotKeyRef)
+        self.returnHotKeyRef = nil
+        DebugLog.write("Unregistered pending Shift+Return hotkey")
     }
 
     private func installHandler() {
@@ -140,6 +134,7 @@ final class HotKeyController {
         case 2: hotKeyEvent = .shiftRight
         case 3: hotKeyEvent = .shiftUp
         case 4: hotKeyEvent = .shiftDown
+        case 5: hotKeyEvent = shouldHandleReturnKey?() == true ? .returnKey : nil
         default: hotKeyEvent = nil
         }
 

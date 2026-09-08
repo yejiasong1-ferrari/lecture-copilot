@@ -21,31 +21,11 @@ final class PromptStore {
         - 不要翻译 ISBN、书名、作者、Cengage。
         """,
         "explain": """
-        模式：Explain
-        任务：用简洁中文讲懂这页课。不要逐句翻译全文。
+        用一段中文把这页讲懂。像同学在旁边小声说。不要逐句翻译，不要列小标题。
 
-        只输出解释。不要推荐问题，不要写长 essay。
-
-        按这个顺序写：
-        核心：
-        一句话说明这页在讲什么。
-
-        结构：
-        如果有表或关系，用最少文字标出 PK / FK，例如：
-        PUBLISHER
-        PK: PubID
-        ↓
-        BOOKS
-        FK: PubID
-
-        关系：
-        - 谁是 1，谁是 many
-        - 用一句人话说明为什么这样连
-
-        最重要的一句话：
-        写出这页真正要记住的规则。例如：在 1:M 关系中，Foreign Key 放在 many side。
-
-        术语写成 中文（English）。假设我是 AI / Business 研究生，要短、清楚。
+        只输出一段话，大约 4 到 8 句。说清这页在讲什么、图或例子里谁和谁怎么连、最该记住的规则。
+        术语写成 中文（English），表名和字段保留英文。
+        不要写「核心：」「结构：」「关系：」。不要推荐问题。
         """,
         "directAnswer": """
         模式：Direct Answer
@@ -79,6 +59,37 @@ final class PromptStore {
         - 可以不用 I think / I would say 开头。
         - 中文只保留“你可以很口语地回答：”这一行，下面必须是英文。
         - 不要复述题干，不要列出选项，不要写 essay，不要推荐问题。
+        """,
+        "classSummary": """
+        根据下面「课堂结构化记录」写一份复习笔记。只使用记录里出现的内容，不要编造没出现过的知识点。
+
+        非常重要：
+        - 只在当前聊天气泡里输出纯文本 Markdown。
+        - 禁止生成文档、云文档、画布、大纲卡片、思维导图。
+        - 不要弹出右侧文档页。答案必须可以直接点消息上的复制。
+        - 不要用表格，不要用 [ ] 任务清单。
+
+        严格按这个纯文本格式，方便整段复制：
+
+        Class Summary
+        两段话：这节课主要在问什么、卡住的点是什么。
+
+        Key Concepts
+        - 概念：一句话
+
+        Important Questions
+        - 题目：答案
+
+        Things I Got Wrong
+        - 没有就写 None
+
+        Useful In-Class Answers
+        - 课堂上能开口说的句子
+
+        Review Checklist
+        - 可复习的要点（普通短横线，不要复选框）
+
+        用中文写说明，术语保留英文。每个小标题单独一行，下面用短横线列表。
         """
     ]
 
@@ -110,7 +121,22 @@ final class PromptStore {
             return defaults
         }
 
-        return defaults.merging(decoded) { _, custom in custom }
+        var merged = defaults.merging(decoded) { _, custom in custom }
+        var dirty = false
+        if let current = merged["explain"], current.contains("核心："), current.contains("最重要的一句话"),
+           let fresh = defaults["explain"] {
+            merged["explain"] = fresh
+            dirty = true
+        }
+        if decoded["classSummary"] == nil || decoded["classSummary"]?.contains("禁止生成文档") != true,
+           let fresh = defaults["classSummary"] {
+            merged["classSummary"] = fresh
+            dirty = true
+        }
+        if dirty {
+            write(merged, to: url)
+        }
+        return merged
     }
 
     private func write(_ prompts: [String: String], to url: URL) {

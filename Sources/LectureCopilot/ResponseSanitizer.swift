@@ -60,8 +60,8 @@ enum ResponseSanitizer {
         case .sayInClass:
             guard cleaned.count >= 32 else { return false }
             return looksLikeSayInClassAnswer(cleaned)
-        case .backToClass:
-            return true
+        case .backToClass, .classSummary:
+            return cleaned.count >= 24
         }
     }
 
@@ -81,7 +81,7 @@ enum ResponseSanitizer {
             return chineseCharacterCount(cleaned) >= 8 && looksLikeDirectAnswer(cleaned)
         case .sayInClass:
             return looksLikeSayInClassAnswer(cleaned)
-        case .backToClass:
+        case .backToClass, .classSummary:
             return true
         }
     }
@@ -122,7 +122,7 @@ enum ResponseSanitizer {
         case .sayInClass:
             if looksLikeSayInClassAnswer(cleaned) { value += 220 }
             if hasQuestionBlock(cleaned) { value -= 260 }
-        case .backToClass:
+        case .backToClass, .classSummary:
             break
         }
 
@@ -276,7 +276,7 @@ enum ResponseSanitizer {
             return lines
         case .translate:
             return focusOnTranslateLines(lines)
-        case .backToClass:
+        case .backToClass, .classSummary:
             return lines
         }
     }
@@ -358,7 +358,9 @@ enum ResponseSanitizer {
         let compactLine = compact(stripLeadingBullet(line))
         guard compactLine.count >= 6 else { return false }
         let placeholders = [
-            "一句话说明这页在讲什么",
+            "用一段中文把这页讲懂",
+            "大约4到8句",
+            "不要写核心",
             "如果有表或关系",
             "用最少文字标出",
             "谁是1，谁是many",
@@ -693,11 +695,7 @@ enum ResponseSanitizer {
             return !containsPromptPlaceholder(text)
         }
 
-        let compactText = compact(text).lowercased()
-        let substance = ["主键", "外键", "一对多", "父表", "foreignkey", "primarykey"]
-        return chineseCharacterCount(text) >= 24 &&
-            substance.contains(where: { compactText.contains($0) }) &&
-            !containsPromptPlaceholder(text)
+        return chineseCharacterCount(text) >= 36 && !containsPromptPlaceholder(text)
     }
 
     private static func containsPromptPlaceholder(_ text: String) -> Bool {

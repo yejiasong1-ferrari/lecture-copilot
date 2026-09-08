@@ -46,7 +46,7 @@ final class DoubaoUploadFSM {
         let id: UUID
         let startedAt: Date
         let prompt: String
-        let imageURL: URL
+        let imageURL: URL?
         let log: JobLog
         var restoreFrontmost: (() -> Void)?
         var composerBaseline: CGImage?
@@ -68,13 +68,13 @@ final class DoubaoUploadFSM {
     private let sentDiffThreshold = 0.02
 
     @discardableResult
-    func run(prompt: String, imageURL: URL, restoreFrontmost: (() -> Void)?) -> DoubaoUploadResult {
+    func run(prompt: String, imageURL: URL?, restoreFrontmost: (() -> Void)?) -> DoubaoUploadResult {
         let jobID = UUID()
         var job = Job(
             id: jobID,
             startedAt: Date(),
             prompt: prompt,
-            imageURL: copyJobImage(from: imageURL, jobID: jobID) ?? imageURL,
+            imageURL: imageURL.flatMap { copyJobImage(from: $0, jobID: jobID) } ?? imageURL,
             log: JobLog(jobID),
             restoreFrontmost: restoreFrontmost
         )
@@ -201,12 +201,16 @@ final class DoubaoUploadFSM {
             extra: "composer=\(ImageDiff.fingerprint(job.composerBaseline))",
             elapsed: Date().timeIntervalSince(started)
         )
+        if job.imageURL == nil {
+            job.attachmentVerified = true
+            return .typePrompt
+        }
         return .pasteImage
     }
 
     private func pasteImage(_ job: inout Job) -> State {
         let started = Date()
-        guard copyImageToPasteboard(job.imageURL) else {
+        guard let imageURL = job.imageURL, copyImageToPasteboard(imageURL) else {
             job.abortReason = "image missing"
             job.log.state("PASTE_IMAGE", "fail", extra: job.abortReason, elapsed: Date().timeIntervalSince(started))
             return .abort
@@ -228,7 +232,7 @@ final class DoubaoUploadFSM {
         var bestDiff = 0.0
         var lastDiff = 0.0
 
-        _ = AXAccess.waitUntil(timeout: 0.9, interval: 0.05) {
+        _ = AXAccess.waitUntil(timeout: 1.25, interval: 0.05) {
             let current = DoubaoWindow.capture(.composer)
             latest = current
             let diff = ImageDiff.ratio(job.composerBaseline, current)
@@ -252,8 +256,12 @@ final class DoubaoUploadFSM {
             return false
         }
 
-        let persisted = lastDiff >= attachDiffThreshold
-        if stableHits >= 2 || persisted {
+        // Doubao thumbnails often flicker just below the threshold while still
+        // attaching. Treat that as success so we do not Cmd+V a second copy.
+        let attached = stableHits >= 2
+            || lastDiff >= attachDiffThreshold
+            || (bestDiff >= attachDiffThreshold && lastDiff >= attachDiffThreshold * 0.75)
+        if attached {
             job.attachmentVerified = true
             job.attachedComposer = latest ?? lastMatch
             job.log.state(
@@ -277,7 +285,25 @@ final class DoubaoUploadFSM {
     }
 
     private func retryPasteImage(_ job: inout Job) -> State {
-        job.log.state("RETRY_PASTE_IMAGE", "retry")
+        let started = Date()
+        var latest: CGImage?
+        let alreadyAttached = AXAccess.waitUntil(timeout: 0.6, interval: 0.05) {
+            latest = DoubaoWindow.capture(.composer)
+            return ImageDiff.ratio(job.composerBaseline, latest) >= attachDiffThreshold
+        }
+        if alreadyAttached {
+            job.attachmentVerified = true
+            job.attachedComposer = latest
+            job.log.state(
+                "RETRY_PASTE_IMAGE",
+                "already attached",
+                extra: String(format: "diff=%.3f", ImageDiff.ratio(job.composerBaseline, latest)),
+                elapsed: Date().timeIntervalSince(started)
+            )
+            return .typePrompt
+        }
+
+        job.log.state("RETRY_PASTE_IMAGE", "retry", elapsed: Date().timeIntervalSince(started))
         return pasteImage(&job)
     }
 
@@ -293,8 +319,9 @@ final class DoubaoUploadFSM {
 
         focusComposer()
         postKey(9, flags: .maskCommand)
-        _ = AXAccess.waitUntil(timeout: 0.35, interval: 0.05) {
-            ImageDiff.ratio(job.attachedComposer, DoubaoWindow.capture(.composer)) > 0.008
+        let wait = job.prompt.count > 600 ? 1.0 : 0.35
+        _ = AXAccess.waitUntil(timeout: wait, interval: 0.05) {
+            ImageDiff.ratio(job.attachedComposer ?? job.composerBaseline, DoubaoWindow.capture(.composer)) > 0.008
         }
         job.promptedComposer = DoubaoWindow.capture(.composer)
         job.log.state("TYPE_PROMPT", "success", extra: "method=clipboard", elapsed: Date().timeIntervalSince(started))
@@ -313,7 +340,7 @@ final class DoubaoUploadFSM {
 
     private func verifySent(_ job: inout Job) -> State {
         let started = Date()
-        let sent = AXAccess.waitUntil(timeout: 0.55, interval: 0.05) {
+        let sent = AXAccess.waitUntil(timeout: job.prompt.count > 600 ? 1.2 : 0.55, interval: 0.05) {
             let composerChanged = ImageDiff.ratio(job.preSendComposer, DoubaoWindow.capture(.composer)) > sentDiffThreshold
             let conversationChanged = ImageDiff.ratio(job.preSendConversation, DoubaoWindow.capture(.conversation)) > sentDiffThreshold
             return composerChanged || conversationChanged

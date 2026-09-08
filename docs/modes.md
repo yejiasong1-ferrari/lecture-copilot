@@ -43,18 +43,14 @@ Write a memo proposal requesting authorization to research a real problem.
 
 目标：解释截图内容，而不是逐句翻译。
 
-输出结构：
+输出风格：
+
+一段中文，像同学在旁边把这页讲懂。不要逐句翻译，不要「核心 / 结构 / 关系」小标题。
+
+例如：
 
 ```text
-这页真正意思：
-...
-
-老师可能想强调：
-- ...
-- ...
-
-重要概念：
-- 中文（English term）：简单解释
+这页的意思是：数据库里的两张表可以通过一个相同的字段连接起来。比如 PUBLISHER 表里的 PubID 是主键（primary key），用来唯一识别每个出版社；BOOKS 表里也有一个 PubID，但它是外键（foreign key），用来表示这本书属于哪个出版社。因为一个出版社可以出版很多本书，所以这是一个 1:M 的关系，而外键通常放在 many side，也就是 BOOKS 表里。
 ```
 
 禁止：

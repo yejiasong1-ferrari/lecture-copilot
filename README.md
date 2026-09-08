@@ -105,15 +105,21 @@ open "/Applications/Lecture Copilot.app"
 | `Shift + →` | **Explain** 用短中文讲懂这页 |
 | `Shift + ↑` | **Direct Answer** 选择题直接给答案 |
 | `Shift + ↑↑`（很快连按两下） | **Say in Class** 给你一句能开口说的英文 |
-| `Return` | 豆包写完了，把答案读到浮窗 |
+| `Shift + Return` | 切到豆包，点复制，把答案读到浮窗 |
 | `Shift + ↓` | 回到刚才的课堂窗口 |
 
 推荐动作，背下来就行：
 
 1. 按快捷键，拖一个框，把幻灯片圈进去  
 2. 人继续盯着老师，别去翻豆包  
-3. 感觉豆包该写完了，按一下 **Return**  
+3. 感觉豆包该写完了，按 **Shift + Return**  
 4. 右上角出现一条 `Answer`；鼠标移上去展开，移开就缩回去
+
+浮窗上可以点 **Start Class**。上课后右边会一直有 **End**。Explain / Direct Answer / Say in Class 会自动记进这节课；Translate 默认不记。下课后把记录发给豆包总结，再按 **Shift + Return** 复制，可保存成 Markdown：
+
+```text
+~/Documents/Lecture Copilot/
+```
 
 它很安静。安静才是优点。
 
@@ -128,7 +134,7 @@ open "/Applications/Lecture Copilot.app"
 辅助功能没开，或第一次问 System Events 时点了不允许。
 
 **浮窗说还没读到回答**  
-豆包可能还在写。等它停一下，再按 Return。
+豆包可能还在写。等它停一下，再按 Shift + Return。
 
 **我是 Windows**  
 这套工具跟你无缘，去找座位上的 Mac 同学。
@@ -139,7 +145,7 @@ open "/Applications/Lecture Copilot.app"
 
 - 不用 API Key，也不会消耗你的 ChatGPT / Claude tokens  
 - 不会把你的课上传到「某个云端大模型账号」——它只去按本机豆包  
-- 不会保存全部历史，本地只留**最后一次**截图和回答  
+- 不会保存全部历史聊天；课堂笔记可自己保存成 Markdown，调试文件仍只留最后一次截图和回答  
 - 不会替你举手发言（Speak 模式只是给你稿子）
 
 数据在：

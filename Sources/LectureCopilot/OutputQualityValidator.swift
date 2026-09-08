@@ -6,6 +6,17 @@ struct OutputValidationResult {
 }
 
 enum OutputQualityValidator {
+    static func prepareCopiedForDisplay(_ text: String?, action: CopilotAction, prompt: String) -> String? {
+        guard let text else { return nil }
+        let copied = normalize(text)
+        guard !copied.isEmpty, copied != normalize(prompt) else { return nil }
+
+        // This text came from Doubao's own answer-level Copy action, not OCR.
+        // Preserve it exactly and allow valid short answers such as "B" as well
+        // as English-only Direct Answer responses.
+        return copied
+    }
+
     static func prepareForDisplay(_ text: String?, action: CopilotAction, prompt: String) -> String? {
         guard let text else { return nil }
 
@@ -42,6 +53,10 @@ enum OutputQualityValidator {
             return validateSayInClass(normalized)
         case .backToClass:
             return .init(isValid: true, reason: nil)
+        case .classSummary:
+            return normalized.count >= 40
+                ? .init(isValid: true, reason: nil)
+                : .init(isValid: false, reason: "class summary too short")
         }
     }
 
@@ -135,7 +150,7 @@ enum OutputQualityValidator {
             return formatSayInClass(text)
         case .explain:
             return formatExplain(text)
-        case .backToClass:
+        case .backToClass, .classSummary:
             return text
         }
     }
@@ -862,17 +877,11 @@ enum OutputQualityValidator {
     }
 
     private static func looksLikeExplainAnswer(_ text: String) -> Bool {
-        let compactText = compact(text)
-        return [
-            "这页真正意思",
-            "老师可能想强调",
-            "重要概念",
-            "真正意思",
-            "核心",
-            "最重要的一句话",
-            "foreignkey",
-            "primarykey"
-        ].contains { compactText.lowercased().contains($0.lowercased()) }
+        guard chineseCharacterCount(text) >= 36 else { return false }
+        if text.contains("英文：") && text.contains("中文：") {
+            return false
+        }
+        return true
     }
 
     private static func looksLikeDirectAnswer(_ text: String) -> Bool {

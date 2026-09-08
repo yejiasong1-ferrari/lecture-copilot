@@ -39,6 +39,16 @@ final class DoubaoAutomation {
         )
     }
 
+    @discardableResult
+    func sendText(_ text: String, restoreFrontmost: (() -> Void)? = nil) -> DoubaoUploadResult {
+        DebugLog.write("Sending class notes text to Doubao")
+        return DoubaoUploadFSM().run(
+            prompt: text,
+            imageURL: nil,
+            restoreFrontmost: restoreFrontmost
+        )
+    }
+
     func inspectAccessibilityTree() -> URL {
         DoubaoAXClient().inspectTree()
     }

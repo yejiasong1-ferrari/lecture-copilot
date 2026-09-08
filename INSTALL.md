@@ -125,15 +125,21 @@ open "/Applications/Lecture Copilot.app"
 | `Shift + →` | Explain，讲懂这页 |
 | `Shift + ↑` | Direct Answer，直接答题 |
 | `Shift + ↑↑`（0.6 秒内连按两下） | Say in Class，能开口说的英文 |
-| `Return` | 豆包写完后，把答案读到浮窗 |
+| `Shift + Return` | 切到豆包，点复制，把答案读到浮窗 |
 | `Shift + ↓` | 回到刚才的课堂窗口 |
 
 推荐动作：
 
 1. 按快捷键，框选幻灯片
 2. 人继续听课，别去翻豆包
-3. 感觉它写完了，按 **Return**
+3. 感觉它写完了，按 **Shift + Return**
 4. 右上角出现 `Answer`；鼠标移上去展开，移开就缩回去
+
+浮窗可点 **Start Class**。上课后右边一直有 **End**。Explain / Direct Answer / Say in Class 会记进这节课。下课后发给豆包总结，再按 **Shift + Return** 复制，保存到：
+
+```text
+~/Documents/Lecture Copilot/
+```
 
 ---
 
@@ -193,7 +199,7 @@ Class Mode 要打勾，辅助功能要蓝。
 辅助功能或 System Events 没开。
 
 **浮窗说还没读到回答**  
-再等一会儿，再按 Return。
+再等一会儿，再按 Shift + Return。
 
 **开关是蓝的，App 仍说没权限**  
 重新编译过。退出 App，重新添加路径。

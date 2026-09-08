@@ -6,6 +6,7 @@ enum CopilotAction {
     case directAnswer
     case sayInClass
     case backToClass
+    case classSummary
 
     var promptKey: String? {
         switch self {
@@ -13,6 +14,7 @@ enum CopilotAction {
         case .explain: "explain"
         case .directAnswer: "directAnswer"
         case .sayInClass: "sayInClass"
+        case .classSummary: "classSummary"
         case .backToClass: nil
         }
     }
@@ -24,6 +26,7 @@ enum CopilotAction {
         case .directAnswer: "Direct Answer"
         case .sayInClass: "Say in Class"
         case .backToClass: "Back to Class"
+        case .classSummary: "Class Summary"
         }
     }
 
@@ -34,6 +37,7 @@ enum CopilotAction {
         case .directAnswer: "Answer"
         case .sayInClass: "Speak"
         case .backToClass: "Class"
+        case .classSummary: "Summary"
         }
     }
 }
