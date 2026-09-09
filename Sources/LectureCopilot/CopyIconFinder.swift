@@ -79,11 +79,28 @@ final class CopyIconFinder {
             }
         }
 
-        DebugLog.write(String(format: "Copy icon best score %.3f at image (%d,%d)", bestScore, bestX, bestY))
-        guard bestScore >= 0.70 else { return nil }
-
         let px = (CGFloat(bestX) + CGFloat(bestWidth) / 2) / CGFloat(source.width)
         let py = (CGFloat(bestY) + CGFloat(bestHeight) / 2) / CGFloat(source.height)
+        let preferredDistance = preferredXRatio.map { abs(px - $0) }
+
+        // Keep the original conservative threshold for an unconstrained scan.
+        // When the candidate is on Doubao's stable first-action column, allow a
+        // lower visual score: dark/light themes and display scaling change the
+        // small icon substantially, while the clipboard check after the click
+        // still proves whether this really was Copy.
+        let isPositionGuided = preferredDistance.map { $0 <= 0.024 } ?? false
+        let minimumScore = isPositionGuided ? 0.52 : 0.70
+        DebugLog.write(String(
+            format: "Copy icon best score %.3f threshold %.2f x=%.3f guided=%@ at image (%d,%d)",
+            bestScore,
+            minimumScore,
+            px,
+            isPositionGuided ? "yes" : "no",
+            bestX,
+            bestY
+        ))
+        guard bestScore >= minimumScore else { return nil }
+
         let point = CGPoint(
             x: windowBounds.minX + px * windowBounds.width,
             y: windowBounds.minY + py * windowBounds.height

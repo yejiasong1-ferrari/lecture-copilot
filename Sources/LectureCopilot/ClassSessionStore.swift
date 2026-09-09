@@ -121,6 +121,11 @@ final class ClassSessionStore {
         persist()
     }
 
+    func clear() {
+        session = nil
+        DebugLog.write("Class session cleared")
+    }
+
     func snapshot() -> ClassHUDSnapshot {
         guard let session else { return .idle }
         let phase: ClassHUDSnapshot.Phase

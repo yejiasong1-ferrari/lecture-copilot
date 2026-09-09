@@ -30,8 +30,10 @@ final class FloatingAnswerWindow {
     private let actionBar = NSView()
     private let primaryActionButton = NSButton(title: "", target: nil, action: nil)
     private let secondaryActionButton = NSButton(title: "", target: nil, action: nil)
+    private let newActionButton = NSButton(title: "", target: nil, action: nil)
     private let primaryActionTarget = ButtonTarget()
     private let secondaryActionTarget = ButtonTarget()
+    private let newActionTarget = ButtonTarget()
     private let chipTarget = ButtonTarget()
     private let sessionActionTarget = ButtonTarget()
     private var modeChipToSessionConstraint: NSLayoutConstraint?
@@ -46,10 +48,12 @@ final class FloatingAnswerWindow {
     var onEndClass: (() -> Void)?
     var onReviewNote: (() -> Void)?
     var onSaveNote: (() -> Void)?
+    var onNewClass: (() -> Void)?
     private var headerBottomConstraint: NSLayoutConstraint?
     private var scrollBottomConstraint: NSLayoutConstraint?
 
     private let collapsedHeight: CGFloat = 72
+    private let collapsedMinWidth: CGFloat = 268
     private let expandedMinHeight: CGFloat = 460
     private let cornerRadius: CGFloat = 24
     private let chromeInset: CGFloat = 18
@@ -339,7 +343,7 @@ final class FloatingAnswerWindow {
     }
 
     private func buildPanel() {
-        let initial = windowSize(cardWidth: expandedSize.width, cardHeight: collapsedHeight)
+        let initial = windowSize(cardWidth: collapsedMinWidth, cardHeight: collapsedHeight)
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: initial),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -433,16 +437,21 @@ final class FloatingAnswerWindow {
         kickerLabel.font = .monospacedSystemFont(ofSize: 9, weight: .medium)
         kickerLabel.textColor = GlassPalette.kicker
         kickerLabel.cell?.lineBreakMode = .byTruncatingTail
+        kickerLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         kickerLabel.translatesAutoresizingMaskIntoConstraints = false
 
         titleLabel.font = .systemFont(ofSize: 15.5, weight: .semibold)
         titleLabel.textColor = GlassPalette.title
+        titleLabel.cell?.lineBreakMode = .byTruncatingTail
+        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
         modeChip.wantsLayer = true
         modeChip.layer?.cornerRadius = 11
         modeChip.layer?.cornerCurve = .continuous
         modeChip.layer?.borderWidth = 1
+        modeChip.setContentCompressionResistancePriority(.required, for: .horizontal)
+        modeChip.setContentHuggingPriority(.required, for: .horizontal)
         modeChip.translatesAutoresizingMaskIntoConstraints = false
 
         modeLabel.font = .systemFont(ofSize: 10.5, weight: .semibold)
@@ -453,10 +462,13 @@ final class FloatingAnswerWindow {
         sessionActionChip.layer?.cornerRadius = 11
         sessionActionChip.layer?.cornerCurve = .continuous
         sessionActionChip.layer?.borderWidth = 1
+        sessionActionChip.setContentCompressionResistancePriority(.required, for: .horizontal)
+        sessionActionChip.setContentHuggingPriority(.required, for: .horizontal)
         sessionActionChip.translatesAutoresizingMaskIntoConstraints = false
 
         sessionActionLabel.font = .systemFont(ofSize: 10.5, weight: .semibold)
         sessionActionLabel.alignment = .center
+        sessionActionLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
         sessionActionLabel.translatesAutoresizingMaskIntoConstraints = false
 
         hairline.wantsLayer = true
@@ -508,14 +520,19 @@ final class FloatingAnswerWindow {
         actionBar.translatesAutoresizingMaskIntoConstraints = false
         styleActionButton(primaryActionButton)
         styleActionButton(secondaryActionButton)
+        styleActionButton(newActionButton)
         primaryActionTarget.onTap = { [weak self] in self?.handlePrimaryAction() }
         secondaryActionTarget.onTap = { [weak self] in self?.handleSecondaryAction() }
+        newActionTarget.onTap = { [weak self] in self?.handleNewAction() }
         primaryActionButton.target = primaryActionTarget
         primaryActionButton.action = #selector(ButtonTarget.tap)
         secondaryActionButton.target = secondaryActionTarget
         secondaryActionButton.action = #selector(ButtonTarget.tap)
+        newActionButton.target = newActionTarget
+        newActionButton.action = #selector(ButtonTarget.tap)
         actionBar.addSubview(primaryActionButton)
         actionBar.addSubview(secondaryActionButton)
+        actionBar.addSubview(newActionButton)
 
         chipTarget.onTap = { [weak self] in self?.handleChipTap() }
         let chipClick = NSClickGestureRecognizer(target: chipTarget, action: #selector(ButtonTarget.tap))
@@ -646,8 +663,11 @@ final class FloatingAnswerWindow {
             primaryActionButton.centerYAnchor.constraint(equalTo: actionBar.centerYAnchor),
 
             secondaryActionButton.leadingAnchor.constraint(equalTo: primaryActionButton.trailingAnchor, constant: 10),
-            secondaryActionButton.trailingAnchor.constraint(lessThanOrEqualTo: actionBar.trailingAnchor),
-            secondaryActionButton.centerYAnchor.constraint(equalTo: actionBar.centerYAnchor)
+            secondaryActionButton.centerYAnchor.constraint(equalTo: actionBar.centerYAnchor),
+
+            newActionButton.leadingAnchor.constraint(equalTo: secondaryActionButton.trailingAnchor, constant: 10),
+            newActionButton.trailingAnchor.constraint(lessThanOrEqualTo: actionBar.trailingAnchor),
+            newActionButton.centerYAnchor.constraint(equalTo: actionBar.centerYAnchor)
         ])
 
         modeChipToSessionConstraint = modeChip.trailingAnchor.constraint(equalTo: sessionActionChip.leadingAnchor, constant: -8)
@@ -669,14 +689,17 @@ final class FloatingAnswerWindow {
     private func configureActionBar(kind: String) {
         primaryActionButton.isHidden = true
         secondaryActionButton.isHidden = true
+        newActionButton.isHidden = true
         actionBarHeightConstraint?.constant = 0
 
         switch kind {
         case "summary":
             primaryActionButton.title = "Review Note"
             secondaryActionButton.title = "Save"
+            newActionButton.title = "New"
             primaryActionButton.isHidden = false
             secondaryActionButton.isHidden = false
+            newActionButton.isHidden = false
             actionBarHeightConstraint?.constant = 44
         default:
             break
@@ -695,8 +718,8 @@ final class FloatingAnswerWindow {
         let phase = sessionSnapshot?.phase
         let showStart = phase == .idle && currentKind == "session"
         let showEnd = phase == .running
-        let showSave = phase == .summaryReady || phase == .saved || currentKind == "summary"
-        let visible = showStart || showEnd || showSave
+        let showNew = phase == .summaryReady || phase == .saved || currentKind == "summary"
+        let visible = showStart || showEnd || showNew
 
         sessionActionChip.isHidden = !visible
         modeChip.isHidden = showStart
@@ -710,16 +733,15 @@ final class FloatingAnswerWindow {
         if showEnd {
             sessionActionLabel.stringValue = "End"
             accent = NSColor(calibratedRed: 1.0, green: 0.45, blue: 0.42, alpha: 1)
-        } else if showStart {
-            sessionActionLabel.stringValue = "Start"
-            accent = NSColor(calibratedRed: 0.42, green: 0.86, blue: 0.68, alpha: 1)
         } else {
-            sessionActionLabel.stringValue = "Save"
-            accent = NSColor(calibratedRed: 0.95, green: 0.78, blue: 0.38, alpha: 1)
+            sessionActionLabel.stringValue = showNew ? "New" : "Start"
+            accent = NSColor(calibratedRed: 0.42, green: 0.86, blue: 0.68, alpha: 1)
         }
         sessionActionChip.layer?.backgroundColor = accent.withAlphaComponent(0.18).cgColor
         sessionActionChip.layer?.borderColor = accent.withAlphaComponent(0.55).cgColor
         sessionActionLabel.textColor = accent.blended(withFraction: 0.22, of: .white) ?? accent
+        sessionActionChip.invalidateIntrinsicContentSize()
+        sessionActionLabel.invalidateIntrinsicContentSize()
     }
 
     private func handleSessionActionTap() {
@@ -729,7 +751,7 @@ final class FloatingAnswerWindow {
         } else if phase == .idle {
             onStartClass?()
         } else if phase == .summaryReady || phase == .saved || currentKind == "summary" {
-            onSaveNote?()
+            onNewClass?()
         }
     }
 
@@ -746,6 +768,12 @@ final class FloatingAnswerWindow {
     private func handleSecondaryAction() {
         if currentKind == "summary" {
             onSaveNote?()
+        }
+    }
+
+    private func handleNewAction() {
+        if currentKind == "summary" {
+            onNewClass?()
         }
     }
 
@@ -868,6 +896,23 @@ final class FloatingAnswerWindow {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.22, execute: work)
     }
 
+    private func collapsedCardWidth() -> CGFloat {
+        let textWidth = max(
+            kickerLabel.intrinsicContentSize.width,
+            titleLabel.intrinsicContentSize.width
+        )
+        let modeWidth = modeChip.isHidden
+            ? 0
+            : modeLabel.intrinsicContentSize.width + 20 + 8
+        let sessionWidth: CGFloat = {
+            guard !sessionActionChip.isHidden else { return 0 }
+            let labelWidth = max(sessionActionLabel.intrinsicContentSize.width, 28)
+            return labelWidth + 20 + 9
+        }()
+        let fitted = 16 + 38 + 12 + textWidth + 12 + modeWidth + sessionWidth + 28 + 14 + 16
+        return min(max(ceil(fitted), collapsedMinWidth), expandedSize.width)
+    }
+
     private func applyExpanded(_ expanded: Bool, animated: Bool) {
         guard let panel else { return }
 
@@ -884,26 +929,23 @@ final class FloatingAnswerWindow {
         actionBarBottomConstraint?.isActive = showActions
         headerBottomConstraint?.isActive = !expanded
 
+        let cardWidth = expanded ? expandedSize.width : collapsedCardWidth()
+        let cardHeight = expanded ? max(expandedSize.height, expandedMinHeight) : collapsedHeight
+        let nextSize = windowSize(cardWidth: cardWidth, cardHeight: cardHeight)
+
         if expanded {
             panel.minSize = windowSize(cardWidth: 320, cardHeight: expandedMinHeight)
             panel.maxSize = NSSize(width: 10_000, height: 10_000)
         } else {
-            panel.minSize = windowSize(cardWidth: 320, cardHeight: collapsedHeight)
-            panel.maxSize = windowSize(cardWidth: 10_000, cardHeight: collapsedHeight)
+            panel.minSize = nextSize
+            panel.maxSize = nextSize
         }
 
         let current = panel.frame
-        let top = current.maxY
-        let currentCardWidth = max(current.width - chromeInset * 2, 320)
-        let width = expanded ? max(currentCardWidth, expandedSize.width) : currentCardWidth
-        let height = expanded ? max(expandedSize.height, expandedMinHeight) : collapsedHeight
-        if expanded {
-            expandedSize = NSSize(width: width, height: height)
-        }
-
         var next = current
-        next.size = windowSize(cardWidth: width, cardHeight: height)
-        next.origin.y = top - next.height
+        next.size = nextSize
+        next.origin.x = current.maxX - nextSize.width
+        next.origin.y = current.maxY - nextSize.height
         next = pinnedToScreen(next)
 
         let finish = {
@@ -916,7 +958,7 @@ final class FloatingAnswerWindow {
 
         if animated {
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.2
+                context.duration = 0.22
                 context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 panel.animator().setFrame(next, display: true)
             } completionHandler: {
@@ -953,7 +995,7 @@ final class FloatingAnswerWindow {
         let screen = NSScreen.main ?? NSScreen.screens.first
         guard let visibleFrame = screen?.visibleFrame else { return }
 
-        let size = windowSize(cardWidth: expandedSize.width, cardHeight: collapsedHeight)
+        let size = windowSize(cardWidth: collapsedCardWidth(), cardHeight: collapsedHeight)
         let origin = NSPoint(
             x: visibleFrame.maxX - size.width - 8,
             y: visibleFrame.maxY - size.height - 8

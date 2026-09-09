@@ -182,6 +182,7 @@ final class LectureCopilotController {
         floatingWindow.onEndClass = { [weak self] in self?.endClass() }
         floatingWindow.onReviewNote = { [weak self] in self?.reviewClassNote() }
         floatingWindow.onSaveNote = { [weak self] in self?.saveClassNote() }
+        floatingWindow.onNewClass = { [weak self] in self?.newClass() }
     }
 
     func presentSessionIfNeeded() {
@@ -215,6 +216,27 @@ final class LectureCopilotController {
         floatingWindow.showClassSession(sessionStore.snapshot())
         onSessionChanged?()
         DebugLog.write("Class session HUD started")
+    }
+
+    func newClass() {
+        guard !isSessionRunning else { return }
+        if sessionStore.session?.summary != nil, sessionStore.session?.savePath == nil {
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.messageText = "Start a new class?"
+            alert.informativeText = "上一节课的总结还没保存。"
+            alert.addButton(withTitle: "New Class")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
+
+        pendingRead = nil
+        pendingInteractionID = nil
+        stopSessionTimer()
+        sessionStore.clear()
+        floatingWindow.showClassSession(.idle)
+        onSessionChanged?()
+        DebugLog.write("Class session HUD reset to Start")
     }
 
     func endClass() {
