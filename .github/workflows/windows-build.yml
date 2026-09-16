@@ -37,8 +37,8 @@ jobs:
       - name: Run non-interactive self-test
         shell: pwsh
         run: |
-          & 'windows/dist/win-x64/Lecture Copilot.exe' --self-test
-          if ($LASTEXITCODE -ne 0) { throw "Self-test failed with exit code $LASTEXITCODE" }
+          $process = Start-Process -FilePath 'windows/dist/win-x64/Lecture Copilot.exe' -ArgumentList '--self-test' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Self-test failed with exit code $($process.ExitCode)" }
 
       - name: Install Inno Setup
         shell: pwsh
