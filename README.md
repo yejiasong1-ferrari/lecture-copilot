@@ -147,20 +147,6 @@ Class Mode 要打开。Mac 还要检查辅助功能。别的软件可能抢了�
 
 ---
 
-## 给开发者
-
-Intel Mac 或想自己编译：
-
-```bash
-git clone https://github.com/yejiasong1-ferrari/lecture-copilot.git
-cd lecture-copilot
-./install.sh
-```
-
-Windows 源码在 `windows/`，和 Mac 的 Swift 工程完全隔离。构建见 [windows/README.md](windows/README.md)。
-
----
-
 ## v1.1.0
 
 - Mac / Windows 都能用，安装器和数据互不影响。
