@@ -1,145 +1,155 @@
 <p align="center">
-  <img src="docs/assets/lecture-copilot-brand.png" width="560" alt="Lecture Copilot — Listen, Understand, Keep Up">
+  <img src="docs/assets/lecture-copilot-brand.png" width="420" alt="Lecture Copilot — Listen, Understand, Keep Up">
 </p>
 
 <h1 align="center">Lecture Copilot</h1>
 
 <p align="center">
-  留在课堂页面，框选任何内容，通过已登录的豆包完成翻译、讲解、回答与课堂总结。
+  <strong>老师突然点你。幻灯片全是英文。选择题还剩 12 秒。</strong><br>
+  你还在课堂页面，框一下，答案出现在右上角。
 </p>
 
 <p align="center">
-  <a href="https://github.com/yejiasong1-ferrari/lecture-copilot/releases/latest"><img src="https://img.shields.io/badge/version-v1.1.0-4F8CFF" alt="v1.1.0"></a>
-  <img src="https://img.shields.io/badge/macOS-14%2B-black?logo=apple" alt="macOS 14+">
-  <img src="https://img.shields.io/badge/Windows-10%2F11-1674EA?logo=windows" alt="Windows 10/11">
-  <img src="https://img.shields.io/badge/download-Apple%20Silicon-8A63D2" alt="Apple Silicon download">
+  不用 API Key · 不切去豆包复制粘贴 · Mac / Windows 都能用
+</p>
+
+<p align="center">
+  <a href="https://github.com/yejiasong1-ferrari/lecture-copilot/releases/latest/download/Lecture-Copilot-Windows-x64-Setup.exe"><img src="https://img.shields.io/badge/Windows-下载安装包%20·%2070MB-1674EA?logo=windows&logoColor=white" alt="Download Windows installer"></a>
+  &nbsp;
+  <a href="https://github.com/yejiasong1-ferrari/lecture-copilot/releases/latest"><img src="https://img.shields.io/badge/macOS-一行安装-black?logo=apple" alt="Install on macOS"></a>
+  &nbsp;
+  <img src="https://img.shields.io/badge/version-v1.1.0-4F8CFF" alt="v1.1.0">
   <img src="https://img.shields.io/badge/API%20Key-not%20required-31B57B" alt="No API key required">
 </p>
 
-Lecture Copilot 是一个轻量的 macOS 与 Windows 课堂助手。按快捷键框选幻灯片后，它会短暂操作电脑上已经登录的豆包，再把结果放进右上角的玻璃浮窗。你可以继续看 Zoom、浏览器或课件，不必来回复制粘贴。
+Lecture Copilot 是坐在你旁边的那个「会框屏幕的同学」。  
+它不会新开一个 AI 网站，只会去按你电脑里已经登录的 **豆包**：截图、提问、把回答送回右上角小浮窗。你继续盯着老师，豆包在旁边写。
 
-它适合英文授课、术语密集的课程、临时没听懂的概念，以及课后整理课堂记录。
+---
 
-> macOS 版支持 macOS 14+ 和 Apple Silicon；Intel Mac 可从源码构建。Windows 版支持 64 位 Windows 10/11 x64。两个版本的源码、安装器和本地数据完全隔离。
+## 上课会遇到的四件事
 
-## 选择你的系统
+| 场景 | 你按 | 它帮你干啥 |
+|---|---|---|
+| 这页英文完全看不懂 | `Shift + ←` | **Translate**：只翻图上看得见的字，不给你编一整章讲义 |
+| 概念跳太快，没跟上 | `Shift + →` | **Explain**：用几句中文把这页讲懂，像旁边同学低声说 |
+| 选择题 / 问答题倒计时 | `Shift + ↑` | **Direct Answer**：直接给答案，再补一句为什么 |
+| 老师点名让你开口 | `Shift + ↑↑`（连按两下） | **Say in Class**：给你 1–2 句能马上说出口的英文 |
 
-### Windows 10 / 11
+框完幻灯片，人继续留在 Zoom / 浏览器 / WPS。  
+豆包写完后按 **`Shift + Return`**，答案进右上角浮窗。鼠标移上去才展开，移开就缩回去。
 
-从 [最新 Release](https://github.com/yejiasong1-ferrari/lecture-copilot/releases/latest) 下载并双击：
+连按两下 **Shift** 可以藏起浮窗。老师走过你屏幕时，用得上。
 
-```text
-Lecture-Copilot-Windows-x64-Setup.exe
-```
+---
 
-或者在 PowerShell 运行带 SHA-256 验证的一行安装：
+## 现在就下载
+
+### Windows 10 / 11（推荐：直接下安装包）
+
+点这里下载，然后双击：
+
+**[Lecture-Copilot-Windows-x64-Setup.exe](https://github.com/yejiasong1-ferrari/lecture-copilot/releases/latest/download/Lecture-Copilot-Windows-x64-Setup.exe)**
+
+大约 70 MB，不用预装 .NET，不用管理员权限。
+
+> 第一次 Windows 可能弹出 SmartScreen「已保护你的电脑」。确认是这个 GitHub 仓库后，点 **更多信息 → 仍要运行**。
+
+也可以在 PowerShell 里粘贴**整行**（末尾的 `| iex` 不能少）：
 
 ```powershell
 irm https://raw.githubusercontent.com/yejiasong1-ferrari/lecture-copilot/main/windows/install.ps1 | iex
 ```
 
-完整步骤和 Windows 故障排查见 [Windows 使用说明](windows/README.md)。
+这一行也会去 GitHub 拉那 70 MB。国内网络经常要 **2–10 分钟**，进度条看起来不动是正常的，**不要关窗口**。嫌慢就用上面的浏览器下载。
 
-### macOS 14+
+完整说明：[Windows 使用说明](windows/README.md)
 
-开始前先安装并登录豆包 Mac 客户端。
+### Mac（macOS 14+，Apple Silicon）
 
-打开 macOS 自带的「终端」，复制下面整行并按回车：
+先装好并登录豆包。打开「终端」，整行粘贴：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/yejiasong1-ferrari/lecture-copilot/main/install-release.sh | bash
 ```
 
-安装器会：
+装完**先别打开**。按终端提示，把这个 App 加进：
 
-1. 从 GitHub Release 下载最新版，不安装 Xcode、不在你的电脑上编译。
-2. 校验下载包并安装到 `/Applications/Lecture Copilot.app`。
-3. 在桌面创建带图标的启动入口。
-4. 把 App 路径复制到剪贴板，并打开需要设置的两个权限页面。
+1. **屏幕录制**
+2. **辅助功能**
 
-安装结束后，先不要打开 App。按照终端里的提示打开：
+两个开关都蓝了，再从桌面点圆角 logo 启动。  
+逐步截图见 [macOS 安装说明](INSTALL.md)。
 
-1. **屏幕录制与系统音频录制**：点 `+`，按 `Command + Shift + G`，粘贴，添加 Lecture Copilot，并打开开关。
-2. **辅助功能**：重复同样步骤，并打开开关。
-3. 两个开关都打开后，再从桌面或「应用程序」启动 Lecture Copilot。
+---
 
-需要逐屏说明、手动下载、更新、卸载和故障排查，请看 [macOS 完整安装说明](INSTALL.md)。
+## 三步就会用
 
-## 它能做什么
+1. **打开豆包，确认已经登录。** Lecture Copilot 没有自己的模型，全靠这只豆包。
+2. **打开 Lecture Copilot。** 右上角出现浮窗；菜单栏 / 托盘里能看到 logo。确认 Class Mode 是开着的。
+3. **上课时按快捷键 → 拖一个框圈住幻灯片 → 继续听课。** 豆包停笔后按 `Shift + Return`，看浮窗。
 
-- **Translate**：把截图中的英文按句翻成中文，保留术语原文。
-- **Explain**：用简短中文把当前页面讲懂。
-- **Direct Answer**：对截图中的问题给出直接答案和简短理由。
-- **Say in Class**：生成一两句可以直接开口说的英文。
-- **Class Session**：记录本节课的讲解、回答和发言建议，下课后生成总结并保存为 Markdown。
-- **Quiet HUD**：答案停在屏幕右上角；鼠标移入展开，移开收起；裸按两下 Shift 可以隐藏或显示。
+完整一轮大概是这样：
 
-## 上课怎么用
+```text
+Shift + →     圈这页英文
+（人还在课堂）  豆包正在写
+Shift + Return  浮窗出现中文讲解
+Shift + ↓      如果焦点跑丢了，拉回课堂窗口
+```
 
-先点击菜单栏的 Lecture Copilot 图标，确认 **Class Mode** 已打开。
+---
 
-- `Shift + ←`：Translate
-- `Shift + →`：Explain
-- `Shift + ↑`：Direct Answer
-- 0.6 秒内连续两次 `Shift + ↑`：Say in Class
-- `Shift + Return`：去豆包复制本次回答并显示在浮窗
-- `Shift + ↓`：回到刚才的课堂 App
-- 裸按两下 `Shift`：隐藏或显示浮窗
+## 一节课怎么记
 
-一次完整操作是：
+下课后不想让这节课蒸发：
 
-1. 按功能快捷键。
-2. 拖框选中幻灯片或题目。
-3. 程序发送后自动回到课堂页面。
-4. 豆包生成完成后按 `Shift + Return`。
-5. 答案出现在右上角浮窗。
+1. 浮窗点绿色 **Start**，开始计时。
+2. Explain / Direct Answer / Say in Class 会自动记进这节课。Translate 默认不记。
+3. 下课点红色 **End**。它只停表，**不会**偷偷发给豆包。
+4. 想总结再点 **Summary**；不想总结就点橙色 **New**。
+5. 总结出来后按 `Shift + Return`，再点 **Save**，自己起名、选文件夹。
 
-## 课堂记录
+笔记默认在：
 
-1. 在浮窗点 **Start** 开始一节课。
-2. Explain、Direct Answer、Say in Class 会自动记入本节课；Translate 默认不记录，可在菜单开启。
-3. 点红色 **End** 只停止计时，不会立刻发送总结。
-4. 点 **Summary** 后才把课堂记录发给豆包。
-5. 总结生成完后按 `Shift + Return`。
-6. 用 **Save** 保存 Markdown，或用 **New** 开始下一节课。
+- Mac：`~/Documents/Lecture Copilot/`
+- Windows：`文档\Lecture Copilot`
 
-默认保存目录：macOS 为 `~/Documents/Lecture Copilot/`，Windows 为 `%USERPROFILE%\Documents\Lecture Copilot`。
+---
 
-## 为什么需要这些权限
+## 它不会做什么
 
-- **macOS 屏幕录制**：只用于你主动框选课堂内容时截图。
-- **macOS 辅助功能与自动化**：用于切换豆包、粘贴内容、点击 Copy，并返回课堂页面。
-- **Windows**：使用系统截图工具和 Windows UI Automation，不需要上述 macOS 权限；Lecture Copilot 与豆包需使用相同权限等级。
+- 不会要你的 OpenAI / Claude Key，也不会刷那些 tokens。
+- 不会在老师眼皮底下弹出一个巨大聊天窗口。
+- 不会在你按 End 的时候自作主张去写总结。
+- Windows 不需要 macOS 那两扇权限门；Mac 需要，因为系统就是这么规定截图和自动操作的。
 
-Lecture Copilot 不调用模型 API，也不需要 API Key，不会产生单独的 API 账单。你选中的截图和提示词会通过电脑上已登录的豆包客户端发送，并受豆包自身的服务和隐私政策约束。完整聊天仍保存在豆包中。
+截图和 prompt 只进你本机已登录的豆包，完整对话还在豆包自己的聊天记录里。
 
-本地运行数据位于 macOS 的 `~/Library/Application Support/Lecture Copilot/`，或 Windows 的 `%LOCALAPPDATA%\Lecture Copilot`。
+---
 
 ## 常见问题
 
-**快捷键没有反应**
+**PowerShell 一直停在「正在写入请求流 / Downloading…」**  
+它在下载 70 MB 安装包。国内连 GitHub 很慢，进度条几乎不更新。等几分钟，或关掉窗口，改用[浏览器下载](https://github.com/yejiasong1-ferrari/lecture-copilot/releases/latest/download/Lecture-Copilot-Windows-x64-Setup.exe)。整行命令末尾必须有 `| iex`。
 
-确认 Class Mode 已打开，并检查辅助功能权限。更新 App 后如果权限失效，请重新运行安装命令并重新添加权限。
+**快捷键没反应**  
+Class Mode 要打开。Mac 还要检查辅助功能。别的软件可能抢了同一组 Shift + 方向键。
 
-**能截图，但豆包没有动作**
+**能截图，豆包没动**  
+豆包要先打开并登录。Mac 第一次会问能不能控制 System Events，选允许。Windows 上不要只把其中一个设成「以管理员运行」。
 
-确认豆包已经安装、登录，并在「系统设置 → 隐私与安全性 → 自动化」中允许 Lecture Copilot 控制 System Events。
+**浮窗写 Still generating**  
+豆包还在写，或 Copy 按钮还没出来。等一两秒，再按一次 `Shift + Return`。
 
-**浮窗显示 Still generating**
+**Mac 说无法验证开发者**  
+用上面的一行安装命令。当前是 ad-hoc 签名，还没有 Apple 公证。
 
-豆包可能仍在生成，或 Copy 按钮尚未出现。等一两秒，再按一次 `Shift + Return`。
+---
 
-**macOS 说无法验证开发者**
+## 给开发者
 
-请使用上面的一行安装命令。安装器会校验 GitHub 下载包并清理下载隔离标记。当前版本使用 ad-hoc 签名，还没有 Apple 公证。
-
-**支持其他模型吗**
-
-当前自动化流程针对豆包桌面版。macOS 与 Windows 都不调用模型 API。
-
-## macOS 从源码安装
-
-适合开发者或 Intel Mac 用户。需要 Xcode Command Line Tools：
+Intel Mac 或想自己编译：
 
 ```bash
 git clone https://github.com/yejiasong1-ferrari/lecture-copilot.git
@@ -147,23 +157,15 @@ cd lecture-copilot
 ./install.sh
 ```
 
-只构建、不安装：
+Windows 源码在 `windows/`，和 Mac 的 Swift 工程完全隔离。构建见 [windows/README.md](windows/README.md)。
 
-```bash
-./scripts/build_app.sh --no-reset
-```
+---
 
-输出位于 `dist/Lecture Copilot.app`。
+## v1.1.0
 
-## 版本
+- Mac / Windows 都能用，安装器和数据互不影响。
+- Start / End / Summary / Save / New，下课再决定要不要总结。
+- 双击 Shift 藏浮窗；品牌圆角 logo。
+- 豆包 Copy 读取更稳；没开豆包会尝试帮你打开。
 
-### v1.1.0
-
-- 新的 App、菜单栏和 HUD 品牌图标。
-- Start / End / Summary / Save / New 课堂流程更完整。
-- 双击 Shift 隐藏或显示 HUD。
-- Copy 图标识别与点击增加视觉定位、重复点击和辅助功能兜底。
-- 提供无需编译的一行安装和 GitHub Release 下载包。
-- 新增独立的 Windows 10/11 x64 版本、安装器和使用说明。
-
-完整更新记录见 [CHANGELOG.md](CHANGELOG.md)。
+完整记录：[CHANGELOG.md](CHANGELOG.md)

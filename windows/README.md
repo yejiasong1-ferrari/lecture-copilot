@@ -10,21 +10,19 @@ Windows 版与 macOS 版使用相同的课堂流程，但代码、安装器和�
 
 ## 推荐安装
 
-从 [GitHub Releases](https://github.com/yejiasong1-ferrari/lecture-copilot/releases/latest) 下载：
+**优先用浏览器下载，双击即可：**
 
-```text
-Lecture-Copilot-Windows-x64-Setup.exe
-```
+[Lecture-Copilot-Windows-x64-Setup.exe](https://github.com/yejiasong1-ferrari/lecture-copilot/releases/latest/download/Lecture-Copilot-Windows-x64-Setup.exe)
 
-双击安装即可。默认安装到当前用户目录，不需要管理员权限，并可选择创建桌面快捷方式和开机启动。
+大约 70 MB，不用预装 .NET，不用管理员权限。默认装到当前用户目录，可勾选桌面快捷方式和开机启动。
 
-也可以打开 PowerShell，运行：
+也可以打开 PowerShell，**整行**粘贴（末尾 `| iex` 不能少）：
 
 ```powershell
 irm https://raw.githubusercontent.com/yejiasong1-ferrari/lecture-copilot/main/windows/install.ps1 | iex
 ```
 
-脚本会下载最新安装器并验证 SHA-256，再启动安装向导。
+这一行会从 GitHub 再下一遍同样的 70 MB。国内网络经常要几分钟，进度条停在「正在写入请求流」是 PowerShell 的老毛病，**不是死机**。等太久就关掉，改用上面的浏览器下载。
 
 > 当前安装器还没有购买 Windows 代码签名证书。Windows SmartScreen 第一次可能显示「Windows 已保护你的电脑」。确认下载地址来自本仓库后，可以点「更多信息 → 仍要运行」。
 
@@ -88,6 +86,10 @@ Windows 版不 OCR 豆包正文。读取时会：
 如果豆包仍在生成或没有暴露按钮，HUD 会显示 `Still generating...`。等一两秒再按 `Shift + Return`。
 
 ## 故障排查
+
+### 下载一直停在「正在写入请求流」或 Downloading
+
+安装包大约 70 MB。PowerShell 5 的进度条几乎不更新，国内访问 GitHub 时会像卡住。请等几分钟；或者关掉窗口，改用浏览器下载 [Lecture-Copilot-Windows-x64-Setup.exe](https://github.com/yejiasong1-ferrari/lecture-copilot/releases/latest/download/Lecture-Copilot-Windows-x64-Setup.exe) 后双击。命令必须整行粘贴，末尾要有 `| iex`。
 
 ### 快捷键没有反应
 
