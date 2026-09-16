@@ -2,6 +2,11 @@ name: Windows build
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Optional existing release tag to receive the Windows installer'
+        required: false
+        default: ''
   push:
     branches: [main]
     paths:
@@ -13,7 +18,7 @@ on:
       - '.github/workflows/windows-build.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-windows:
@@ -48,6 +53,15 @@ jobs:
         shell: pwsh
         run: ./windows/build.ps1
 
+      - name: Verify installer checksum
+        shell: pwsh
+        run: |
+          $setup = 'windows/dist/installer/Lecture-Copilot-Windows-x64-Setup.exe'
+          $checksum = "$setup.sha256"
+          $expected = (Get-Content $checksum -Raw).Trim().Split(' ')[0].ToLowerInvariant()
+          $actual = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($expected -ne $actual) { throw 'Installer checksum verification failed' }
+
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
@@ -56,3 +70,14 @@ jobs:
           path: |
             windows/dist/installer/Lecture-Copilot-Windows-x64-Setup.exe
             windows/dist/installer/Lecture-Copilot-Windows-x64-Setup.exe.sha256
+
+      - name: Add installer to GitHub Release
+        if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload '${{ inputs.release_tag }}' `
+            'windows/dist/installer/Lecture-Copilot-Windows-x64-Setup.exe' `
+            'windows/dist/installer/Lecture-Copilot-Windows-x64-Setup.exe.sha256' `
+            --repo '${{ github.repository }}' --clobber
