@@ -134,7 +134,7 @@ final class ClassSessionStore {
         } else if session.summary?.isEmpty == false, session.endTime != nil {
             phase = .summaryReady
         } else if session.endTime != nil {
-            phase = .summarizing
+            phase = .ended
         } else {
             phase = .running
         }

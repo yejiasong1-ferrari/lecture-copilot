@@ -9,6 +9,16 @@ final class HotKeyController {
     private var hotKeyRefs: [EventHotKeyRef?] = []
     private var returnHotKeyRef: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
+    private var globalFlagsMonitor: Any?
+    private var localFlagsMonitor: Any?
+
+    private var shiftIsDown = false
+    private var shiftPressWasChord = false
+    private var shiftDownAt: Date?
+    private var lastBareShiftUpAt: Date?
+
+    private let doubleShiftInterval: TimeInterval = 0.45
+    private let maxTapHold: TimeInterval = 0.35
 
     func start() {
         installHandler()
@@ -16,6 +26,7 @@ final class HotKeyController {
         registerHotKey(keyCode: UInt32(kVK_RightArrow), id: 2, action: .shiftRight)
         registerHotKey(keyCode: UInt32(kVK_UpArrow), id: 3, action: .shiftUp)
         registerHotKey(keyCode: UInt32(kVK_DownArrow), id: 4, action: .shiftDown)
+        installShiftToggleMonitors()
         DebugLog.write("Carbon hotkeys registered")
     }
 
@@ -32,6 +43,7 @@ final class HotKeyController {
             RemoveEventHandler(eventHandler)
         }
         eventHandler = nil
+        removeShiftToggleMonitors()
     }
 
     func setReturnHotKeyEnabled(_ enabled: Bool) {
@@ -111,6 +123,82 @@ final class HotKeyController {
         }
     }
 
+    private func installShiftToggleMonitors() {
+        let handler: (NSEvent) -> Void = { [weak self] event in
+            self?.handleFlagsChanged(event)
+        }
+        globalFlagsMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { event in
+            handler(event)
+        }
+        localFlagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
+            handler(event)
+            return event
+        }
+    }
+
+    private func removeShiftToggleMonitors() {
+        if let globalFlagsMonitor {
+            NSEvent.removeMonitor(globalFlagsMonitor)
+        }
+        if let localFlagsMonitor {
+            NSEvent.removeMonitor(localFlagsMonitor)
+        }
+        globalFlagsMonitor = nil
+        localFlagsMonitor = nil
+        shiftIsDown = false
+        shiftPressWasChord = false
+        shiftDownAt = nil
+        lastBareShiftUpAt = nil
+    }
+
+    private func cancelBareShiftTap() {
+        shiftPressWasChord = true
+        lastBareShiftUpAt = nil
+    }
+
+    private func handleFlagsChanged(_ event: NSEvent) {
+        let isShiftKey = event.keyCode == UInt16(kVK_Shift) || event.keyCode == UInt16(kVK_RightShift)
+        let extras = event.modifierFlags.intersection([.command, .option, .control])
+
+        if !isShiftKey {
+            if event.modifierFlags.contains(.shift) {
+                cancelBareShiftTap()
+            }
+            return
+        }
+
+        let shiftDown = event.modifierFlags.contains(.shift)
+        if shiftDown && !shiftIsDown {
+            shiftIsDown = true
+            shiftDownAt = Date()
+            shiftPressWasChord = !extras.isEmpty
+            return
+        }
+
+        guard !shiftDown, shiftIsDown else { return }
+        shiftIsDown = false
+        let wasChord = shiftPressWasChord
+        let held = shiftDownAt.map { Date().timeIntervalSince($0) } ?? 0
+        shiftPressWasChord = false
+        shiftDownAt = nil
+
+        guard extras.isEmpty, !wasChord, held <= maxTapHold else {
+            lastBareShiftUpAt = nil
+            return
+        }
+
+        let now = Date()
+        if let previous = lastBareShiftUpAt, now.timeIntervalSince(previous) <= doubleShiftInterval {
+            lastBareShiftUpAt = nil
+            DebugLog.write("Double-tap Shift: toggle HUD")
+            DispatchQueue.main.async { [weak self] in
+                self?.onHotKey?(.toggleHUD)
+            }
+        } else {
+            lastBareShiftUpAt = now
+        }
+    }
+
     private func handleCarbonHotKey(_ event: EventRef) {
         var hotKeyID = EventHotKeyID()
         let status = GetEventParameter(
@@ -139,6 +227,7 @@ final class HotKeyController {
         }
 
         guard let hotKeyEvent else { return }
+        cancelBareShiftTap()
         DebugLog.write("Carbon hotkey received: \(hotKeyEvent)")
         onHotKey?(hotKeyEvent)
     }

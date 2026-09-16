@@ -20,8 +20,17 @@ mkdir -p "$MACOS" "$RESOURCES"
 cp "$ROOT/.build/release/LectureCopilot" "$MACOS/Lecture Copilot"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/Resources/copy-icon-template.png" "$RESOURCES/copy-icon-template.png"
+cp "$ROOT/Resources/AppIcon.icns" "$RESOURCES/AppIcon.icns"
+cp "$ROOT/Resources/StatusIcon.png" "$RESOURCES/StatusIcon.png"
+cp "$ROOT/Resources/HUDIcon.png" "$RESOURCES/HUDIcon.png"
+cp "$ROOT/Resources/AppIcon.png" "$RESOURCES/AppIcon.png"
+
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+
 xattr -cr "$APP"
 codesign --force --deep --sign - --identifier com.local.lecturecopilot "$APP"
+touch "$APP"
+"$LSREGISTER" -f "$APP" >/dev/null
 
 echo "Built: $APP"
 

@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         copilot.bindHUD()
         hotKeyController.start()
         copilot.presentSessionIfNeeded()
+        copilot.ensureDoubaoAvailable()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -50,6 +51,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func extractPendingAnswer() {
         copilot.extractPendingAnswer()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        copilot.revealHUD()
+        return true
     }
 }
 
@@ -96,6 +102,21 @@ extension AppDelegate: StatusControllerDelegate {
         renderMenu()
     }
 
+    func statusControllerDidChooseSummarizeClass(_ statusController: StatusController) {
+        copilot.summarizeClass()
+        renderMenu()
+    }
+
+    func statusControllerDidChooseSaveNote(_ statusController: StatusController) {
+        copilot.saveClassNote()
+        renderMenu()
+    }
+
+    func statusControllerDidChooseNewClass(_ statusController: StatusController) {
+        copilot.newClass()
+        renderMenu()
+    }
+
     func statusControllerDidToggleRecordTranslate(_ statusController: StatusController) {
         copilot.toggleRecordTranslate()
         renderMenu()
@@ -111,6 +132,8 @@ private extension AppDelegate {
         statusController.render(
             classModeEnabled: copilot.classModeEnabled,
             sessionRunning: copilot.isSessionRunning,
+            awaitingSummary: copilot.isAwaitingSummary,
+            summaryReady: copilot.isSummaryReady,
             recordTranslate: copilot.recordTranslateEnabled,
             noteCount: copilot.sessionNoteCount
         )

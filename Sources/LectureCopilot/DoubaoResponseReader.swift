@@ -161,6 +161,73 @@ final class DoubaoResponseReader {
         click(at: point)
 
         let startedAt = Date()
+        let physicalClickWait = min(timeout, 0.30)
+        if let copied = waitForCopiedText(
+            previousChangeCount: previousChangeCount,
+            sentinel: sentinel,
+            prompt: prompt,
+            timeout: physicalClickWait,
+            source: source
+        ) {
+            return copied
+        }
+
+        // A newly activated Chromium window can consume the first click only
+        // to make itself key. A second click at the already verified target is
+        // harmless for Copy and avoids leaving the window immediately again.
+        DebugLog.write("capture: \(source) Copy retrying physical click after focus")
+        click(at: point)
+        if let copied = waitForCopiedText(
+            previousChangeCount: previousChangeCount,
+            sentinel: sentinel,
+            prompt: prompt,
+            timeout: 0.25,
+            source: "\(source)-retry"
+        ) {
+            return copied
+        }
+
+        // Chromium occasionally paints the correct Copy target but ignores a
+        // synthesized HID click. Use the visually proven point to select only
+        // a nearby accessibility Copy button, then press it semantically.
+        if pressAccessibleCopyButton(near: point) {
+            DebugLog.write("capture: \(source) Copy retrying with AXPress")
+            let remaining = max(0.35, timeout - Date().timeIntervalSince(startedAt))
+            if let copied = waitForCopiedText(
+                previousChangeCount: previousChangeCount,
+                sentinel: sentinel,
+                prompt: prompt,
+                timeout: remaining,
+                source: "\(source)-AX"
+            ) {
+                return copied
+            }
+        } else {
+            let remaining = timeout - Date().timeIntervalSince(startedAt)
+            if remaining > 0,
+               let copied = waitForCopiedText(
+                   previousChangeCount: previousChangeCount,
+                   sentinel: sentinel,
+                   prompt: prompt,
+                   timeout: remaining,
+                   source: source
+               ) {
+                return copied
+            }
+        }
+
+        DebugLog.write("capture: \(source) Copy did not update clipboard")
+        return nil
+    }
+
+    private func waitForCopiedText(
+        previousChangeCount: Int,
+        sentinel: String,
+        prompt: String,
+        timeout: TimeInterval,
+        source: String
+    ) -> String? {
+        let startedAt = Date()
         while Date().timeIntervalSince(startedAt) < timeout {
             Thread.sleep(forTimeInterval: 0.05)
             guard MainPasteboard.changeCount() != previousChangeCount,
@@ -176,9 +243,68 @@ final class DoubaoResponseReader {
             }
             return copied
         }
-
-        DebugLog.write("capture: \(source) Copy did not update clipboard")
         return nil
+    }
+
+    private func pressAccessibleCopyButton(near point: CGPoint) -> Bool {
+        let nearby = conversationCopyButtons()
+            .compactMap { button -> (button: AXUIElement, distance: CGFloat)? in
+                guard let frame = elementFrame(button) else { return nil }
+                let distance = hypot(frame.midX - point.x, frame.midY - point.y)
+                return (button, distance)
+            }
+            .filter { $0.distance <= 56 }
+            .min { $0.distance < $1.distance }
+
+        if let nearby {
+            let result = AXUIElementPerformAction(nearby.button, kAXPressAction as CFString)
+            DebugLog.write(String(
+                format: "capture: AX Copy distance=%.1f result=%d",
+                nearby.distance,
+                result.rawValue
+            ))
+            if result == .success {
+                return true
+            }
+        }
+
+        // Some Doubao builds omit labels from conversation actions. Since the
+        // point has already passed visual Copy matching, resolve the element
+        // directly under it and walk only its immediate pressable ancestors.
+        for app in runningDoubaoProcesses() {
+            let appElement = AXUIElementCreateApplication(app.processIdentifier)
+            var hitElement: AXUIElement?
+            guard AXUIElementCopyElementAtPosition(
+                appElement,
+                Float(point.x),
+                Float(point.y),
+                &hitElement
+            ) == .success,
+            var candidate = hitElement else {
+                continue
+            }
+
+            for depth in 0..<5 {
+                var actionNames: CFArray?
+                if AXUIElementCopyActionNames(candidate, &actionNames) == .success,
+                   let actions = actionNames as? [String],
+                   actions.contains(kAXPressAction) {
+                    let result = AXUIElementPerformAction(candidate, kAXPressAction as CFString)
+                    DebugLog.write("capture: AX hit-test Copy depth=\(depth) result=\(result.rawValue)")
+                    if result == .success {
+                        return true
+                    }
+                }
+
+                guard let parent = copyAttribute(kAXParentAttribute, from: candidate) else {
+                    break
+                }
+                candidate = parent as! AXUIElement
+            }
+        }
+
+        DebugLog.write("capture: no pressable accessibility element at visual Copy target")
+        return false
     }
 
     private func ocrAnswer(in image: CGImage?, baselineText: String, prompt: String, action: CopilotAction) -> String? {
@@ -315,13 +441,21 @@ final class DoubaoResponseReader {
     private func click(at point: CGPoint) {
         let source = CGEventSource(stateID: .hidSystemState)
         CGWarpMouseCursorPosition(point)
-        Thread.sleep(forTimeInterval: 0.04)
+        if let moved = CGEvent(
+            mouseEventSource: source,
+            mouseType: .mouseMoved,
+            mouseCursorPosition: point,
+            mouseButton: .left
+        ) {
+            moved.post(tap: .cghidEventTap)
+        }
+        Thread.sleep(forTimeInterval: 0.08)
         guard let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left),
               let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left) else {
             return
         }
         down.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: 0.04)
+        Thread.sleep(forTimeInterval: 0.07)
         up.post(tap: .cghidEventTap)
     }
 

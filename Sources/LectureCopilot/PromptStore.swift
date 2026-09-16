@@ -3,7 +3,12 @@ import Foundation
 final class PromptStore {
     private let defaults: [String: String] = [
         "translate": """
+        这是一张新截图。忽略之前所有对话和其他幻灯片。
+
         只做逐句对照翻译。不要解释。
+        只翻译这张图里实际看得见的文字。图里没有的一句都不要写。
+        不要扩写成讲义，不要补公式、例题、定义或下一页内容。
+        如果图里只有标题，就只输出标题对照，到此结束。
 
         先翻标题和正文 bullet，最后翻底部注释。不要把示意图箭头标签做成单词表。
 
@@ -131,6 +136,11 @@ final class PromptStore {
         if decoded["classSummary"] == nil || decoded["classSummary"]?.contains("禁止生成文档") != true,
            let fresh = defaults["classSummary"] {
             merged["classSummary"] = fresh
+            dirty = true
+        }
+        if merged["translate"]?.contains("只翻译这张图里实际看得见的文字") != true,
+           let fresh = defaults["translate"] {
+            merged["translate"] = fresh
             dirty = true
         }
         if dirty {

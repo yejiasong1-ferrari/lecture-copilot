@@ -14,6 +14,16 @@ final class LectureCopilotController {
         sessionStore.session != nil && sessionStore.session?.endTime == nil
     }
 
+    var isAwaitingSummary: Bool {
+        sessionStore.session?.endTime != nil
+            && (sessionStore.session?.summary?.isEmpty ?? true)
+            && sessionStore.session?.savePath == nil
+    }
+
+    var isSummaryReady: Bool {
+        sessionStore.session?.summary?.isEmpty == false
+    }
+
     var recordTranslateEnabled: Bool {
         sessionStore.recordTranslate
     }
@@ -102,6 +112,8 @@ final class LectureCopilotController {
             run(.backToClass)
         case .returnKey:
             retryPendingRead()
+        case .toggleHUD:
+            toggleHUDHidden()
         }
     }
 
@@ -172,6 +184,7 @@ final class LectureCopilotController {
         Say in Class: Shift + Up, Up within 600ms
         Read Doubao Answer: Shift + Return
         Back to Class: Shift + Down
+        Hide / Show HUD: double-tap Shift
         """
         alert.addButton(withTitle: "OK")
         alert.runModal()
@@ -180,9 +193,38 @@ final class LectureCopilotController {
     func bindHUD() {
         floatingWindow.onStartClass = { [weak self] in self?.startClass() }
         floatingWindow.onEndClass = { [weak self] in self?.endClass() }
+        floatingWindow.onSummarizeClass = { [weak self] in self?.summarizeClass() }
         floatingWindow.onReviewNote = { [weak self] in self?.reviewClassNote() }
         floatingWindow.onSaveNote = { [weak self] in self?.saveClassNote() }
         floatingWindow.onNewClass = { [weak self] in self?.newClass() }
+    }
+
+    func ensureDoubaoAvailable() {
+        if doubao.isRunning() {
+            DebugLog.write("Doubao already running at launch")
+            return
+        }
+        DebugLog.write("Doubao not running; launching")
+        doubao.activateDoubao()
+    }
+
+    func revealHUD() {
+        floatingWindow.setHiddenByUser(false)
+        if floatingWindow.hasPanel {
+            return
+        }
+        presentSessionIfNeeded()
+    }
+
+    func toggleHUDHidden() {
+        if floatingWindow.isHiddenByUser || !floatingWindow.isPanelVisible {
+            floatingWindow.setHiddenByUser(false)
+            if !floatingWindow.hasPanel {
+                presentSessionIfNeeded()
+            }
+        } else {
+            floatingWindow.setHiddenByUser(true)
+        }
     }
 
     func presentSessionIfNeeded() {
@@ -192,6 +234,8 @@ final class LectureCopilotController {
             floatingWindow.showClassSession(sessionStore.snapshot())
         } else if sessionStore.session?.summary?.isEmpty == false {
             floatingWindow.showClassSession(sessionStore.snapshot(), detail: sessionStore.session?.summary)
+        } else if isAwaitingSummary {
+            floatingWindow.showClassSession(sessionStore.snapshot())
         } else {
             floatingWindow.showClassSession(.idle)
         }
@@ -203,6 +247,14 @@ final class LectureCopilotController {
             let alert = NSAlert()
             alert.messageText = "Start a new class?"
             alert.informativeText = "上一节课的总结还没保存。"
+            alert.addButton(withTitle: "Start New Class")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        } else if isAwaitingSummary {
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.messageText = "Start a new class?"
+            alert.informativeText = "上一节课还没做总结。"
             alert.addButton(withTitle: "Start New Class")
             alert.addButton(withTitle: "Cancel")
             guard alert.runModal() == .alertFirstButtonReturn else { return }
@@ -228,6 +280,14 @@ final class LectureCopilotController {
             alert.addButton(withTitle: "New Class")
             alert.addButton(withTitle: "Cancel")
             guard alert.runModal() == .alertFirstButtonReturn else { return }
+        } else if isAwaitingSummary {
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.messageText = "Start a new class?"
+            alert.informativeText = "上一节课还没做总结。"
+            alert.addButton(withTitle: "New Class")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
         }
 
         pendingRead = nil
@@ -249,7 +309,7 @@ final class LectureCopilotController {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = "End Class?"
-        alert.informativeText = "停止计时，并把这节课的记录发给豆包做总结。"
+        alert.informativeText = "停止计时。需要总结时再点 Summary。"
         alert.addButton(withTitle: "End Class")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
@@ -257,7 +317,17 @@ final class LectureCopilotController {
         _ = sessionStore.end()
         stopSessionTimer()
         onSessionChanged?()
-        summarizeClass()
+        floatingWindow.showClassSession(sessionStore.snapshot())
+        DebugLog.write("Class session ended; waiting for Summary")
+    }
+
+    func summarizeClass() {
+        guard isAwaitingSummary else { return }
+        guard !isBusy else {
+            floatingWindow.showLoading("等当前操作结束后再总结。", action: .classSummary)
+            return
+        }
+        sendSummaryToDoubao()
     }
 
     func toggleRecordTranslate() {
@@ -281,7 +351,7 @@ final class LectureCopilotController {
         panel.directoryURL = sessionStore.notesRoot
         panel.nameFieldStringValue = sessionStore.defaultSaveURL().lastPathComponent
         panel.title = "Save Class Note"
-        panel.message = "保存为 Markdown。截图会放在同名的 shots 文件夹里。"
+        panel.message = "Name this summary and choose where to save it. Screenshots go in a matching shots folder."
         panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
@@ -296,7 +366,7 @@ final class LectureCopilotController {
         }
     }
 
-    private func summarizeClass() {
+    private func sendSummaryToDoubao() {
         savePreviousActiveApp()
         let payload = sessionStore.doubaoPayload()
         let prompt = prompts.prompt(for: "classSummary") + "\n\n" + payload

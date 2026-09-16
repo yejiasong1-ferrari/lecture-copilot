@@ -48,6 +48,7 @@ echo "Installing to $INSTALL_APP"
 rm -rf "$INSTALL_APP"
 ditto "$ROOT/dist/Lecture Copilot.app" "$INSTALL_APP"
 codesign --force --deep --sign - --identifier "$BUNDLE_ID" "$INSTALL_APP"
+"$ROOT/scripts/create_desktop_launcher.sh" "$INSTALL_APP"
 
 "$ROOT/scripts/reset_permissions.sh" "$INSTALL_APP"
 

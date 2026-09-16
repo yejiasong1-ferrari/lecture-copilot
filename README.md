@@ -1,38 +1,134 @@
-# Lecture Copilot
+<p align="center">
+  <img src="docs/assets/lecture-copilot-brand.png" width="560" alt="Lecture Copilot — Listen, Understand, Keep Up">
+</p>
 
-**v1.0 · For Mac · 不用 API · 不消耗 tokens**
+<h1 align="center">Lecture Copilot</h1>
 
-[![macOS](https://img.shields.io/badge/platform-macOS%2014%2B-black?logo=apple)](https://github.com/yejiasong1-ferrari/lecture-copilot)
-[![version](https://img.shields.io/badge/version-v1.0-0A84FF)](https://github.com/yejiasong1-ferrari/lecture-copilot/releases/tag/v1.0.0)
-[![license](https://img.shields.io/badge/Windows-not%20supported-lightgrey)](https://github.com/yejiasong1-ferrari/lecture-copilot)
+<p align="center">
+  留在课堂页面，框选任何内容，通过已登录的豆包完成翻译、讲解、回答与课堂总结。
+</p>
 
-上课听到一半，幻灯片全是英文，选择题还在倒计时——
+<p align="center">
+  <a href="https://github.com/yejiasong1-ferrari/lecture-copilot/releases/latest"><img src="https://img.shields.io/badge/version-v1.1.0-4F8CFF" alt="v1.1.0"></a>
+  <img src="https://img.shields.io/badge/macOS-14%2B-black?logo=apple" alt="macOS 14+">
+  <img src="https://img.shields.io/badge/download-Apple%20Silicon-8A63D2" alt="Apple Silicon download">
+  <img src="https://img.shields.io/badge/API%20Key-not%20required-31B57B" alt="No API key required">
+</p>
 
-你只要框一下屏幕，本机豆包就会帮你翻译、讲解、直接给答案。回答出现在右上角一条小浮窗里。鼠标移上去才展开，移开又缩回去，老师不一定看得出来你在看小抄。
+Lecture Copilot 是一个轻量的 macOS 课堂助手。按快捷键框选幻灯片后，它会短暂操作电脑上已经登录的豆包，再把结果放进右上角的玻璃浮窗。你可以继续看 Zoom、浏览器或课件，不必来回复制粘贴。
 
-| 不用 API | 不消耗 tokens | 安装简单 |
-| :---: | :---: | :---: |
-| 没有 Key，没有账单，不用去 OpenAI / Claude 注册 | 本项目不调用任何云端模型接口，不会刷你的 API quota | 打开终端，复制三行，回车。脚本自己编译、自己装 |
+它适合英文授课、术语密集的课程、临时没听懂的概念，以及课后整理课堂记录。
 
-它**不是**一个新的 AI 网站。它只会去按你电脑里已经装好的 **豆包**，像有个隐形同学帮你复制粘贴。豆包自己聊多少，跟这个小工具无关。
+> 当前只支持 macOS 14 或更新版本。预编译下载包支持 Apple Silicon（M1/M2/M3/M4）；Intel Mac 可以从源码构建。
 
-> 只支持 Mac（macOS 14 或更新）。Windows 同学先别兴冲冲地下载。
+## 最简单的安装方式
 
----
+开始前先安装并登录豆包 Mac 客户端。
 
-## 你需要这三样
+打开 macOS 自带的「终端」，复制下面整行并按回车：
 
-1. **一台 Mac**（苹果电脑）
-2. **豆包电脑版**，打开过、登录过
-3. **大约 5 分钟**，其中 3 分钟是在跟 macOS 权限较劲
+```bash
+curl -fsSL https://raw.githubusercontent.com/yejiasong1-ferrari/lecture-copilot/main/install-release.sh | bash
+```
 
-没有豆包的话，先去装一个，打开登录好，再回来。
+安装器会：
 
----
+1. 从 GitHub Release 下载最新版，不安装 Xcode、不在你的电脑上编译。
+2. 校验下载包并安装到 `/Applications/Lecture Copilot.app`。
+3. 在桌面创建带图标的启动入口。
+4. 把 App 路径复制到剪贴板，并打开需要设置的两个权限页面。
 
-## 小白安装：就这三行
+安装结束后，先不要打开 App。按照终端里的提示打开：
 
-不用填 Key，不用买额度，不用注册新账号。打开电脑自带的 **终端**（`Command + 空格`，输入「终端」，回车），整段复制：
+1. **屏幕录制与系统音频录制**：点 `+`，按 `Command + Shift + G`，粘贴，添加 Lecture Copilot，并打开开关。
+2. **辅助功能**：重复同样步骤，并打开开关。
+3. 两个开关都打开后，再从桌面或「应用程序」启动 Lecture Copilot。
+
+需要逐屏说明、手动下载、更新、卸载和故障排查，请看 [完整安装说明](INSTALL.md)。
+
+## 它能做什么
+
+- **Translate**：把截图中的英文按句翻成中文，保留术语原文。
+- **Explain**：用简短中文把当前页面讲懂。
+- **Direct Answer**：对截图中的问题给出直接答案和简短理由。
+- **Say in Class**：生成一两句可以直接开口说的英文。
+- **Class Session**：记录本节课的讲解、回答和发言建议，下课后生成总结并保存为 Markdown。
+- **Quiet HUD**：答案停在屏幕右上角；鼠标移入展开，移开收起；裸按两下 Shift 可以隐藏或显示。
+
+## 上课怎么用
+
+先点击菜单栏的 Lecture Copilot 图标，确认 **Class Mode** 已打开。
+
+- `Shift + ←`：Translate
+- `Shift + →`：Explain
+- `Shift + ↑`：Direct Answer
+- 0.6 秒内连续两次 `Shift + ↑`：Say in Class
+- `Shift + Return`：去豆包复制本次回答并显示在浮窗
+- `Shift + ↓`：回到刚才的课堂 App
+- 裸按两下 `Shift`：隐藏或显示浮窗
+
+一次完整操作是：
+
+1. 按功能快捷键。
+2. 拖框选中幻灯片或题目。
+3. 程序发送后自动回到课堂页面。
+4. 豆包生成完成后按 `Shift + Return`。
+5. 答案出现在右上角浮窗。
+
+## 课堂记录
+
+1. 在浮窗点 **Start** 开始一节课。
+2. Explain、Direct Answer、Say in Class 会自动记入本节课；Translate 默认不记录，可在菜单开启。
+3. 点红色 **End** 只停止计时，不会立刻发送总结。
+4. 点 **Summary** 后才把课堂记录发给豆包。
+5. 总结生成完后按 `Shift + Return`。
+6. 用 **Save** 保存 Markdown，或用 **New** 开始下一节课。
+
+默认保存目录：
+
+```text
+~/Documents/Lecture Copilot/
+```
+
+## 为什么需要这些权限
+
+- **屏幕录制**：只用于你主动框选课堂内容时截图。
+- **辅助功能**：用于切换豆包、粘贴截图和提示词、点击 Copy，并返回课堂页面。
+- **自动化 / System Events**：macOS 第一次询问时请选择允许。
+
+Lecture Copilot 不调用模型 API，也不需要 API Key，不会产生单独的 API 账单。你选中的截图和提示词会通过电脑上已登录的豆包客户端发送，并受豆包自身的服务和隐私政策约束。完整聊天仍保存在豆包中。
+
+本地运行数据位于：
+
+```text
+~/Library/Application Support/Lecture Copilot/
+```
+
+## 常见问题
+
+**快捷键没有反应**
+
+确认 Class Mode 已打开，并检查辅助功能权限。更新 App 后如果权限失效，请重新运行安装命令并重新添加权限。
+
+**能截图，但豆包没有动作**
+
+确认豆包已经安装、登录，并在「系统设置 → 隐私与安全性 → 自动化」中允许 Lecture Copilot 控制 System Events。
+
+**浮窗显示 Still generating**
+
+豆包可能仍在生成，或 Copy 按钮尚未出现。等一两秒，再按一次 `Shift + Return`。
+
+**macOS 说无法验证开发者**
+
+请使用上面的一行安装命令。安装器会校验 GitHub 下载包并清理下载隔离标记。当前版本使用 ad-hoc 签名，还没有 Apple 公证。
+
+**支持 Windows 或其他模型吗**
+
+当前版本只支持 macOS，并且自动化流程针对豆包桌面版。
+
+## 从源码安装
+
+适合开发者或 Intel Mac 用户。需要 Xcode Command Line Tools：
 
 ```bash
 git clone https://github.com/yejiasong1-ferrari/lecture-copilot.git
@@ -40,132 +136,22 @@ cd lecture-copilot
 ./install.sh
 ```
 
-没有 `git` 也没关系。把本仓库下载成 zip、解压，然后：
+只构建、不安装：
 
 ```bash
-cd ~/Downloads/lecture-copilot
-./install.sh
+./scripts/build_app.sh --no-reset
 ```
 
-（如果解压出来的文件夹名不一样，把 `lecture-copilot` 改成你看到的那个名字。）
+输出位于 `dist/Lecture Copilot.app`。
 
-脚本会自己编译、装到「应用程序」。第一次可能会弹出 **Xcode Command Line Tools** 安装窗口——点安装，喝口水等它结束，再把上面的 `./install.sh` 运行一次。
+## 版本
 
-**装完先别点开 App。** macOS 还要你亲手开两扇门。
+### v1.1.0
 
----
+- 新的 App、菜单栏和 HUD 品牌图标。
+- Start / End / Summary / Save / New 课堂流程更完整。
+- 双击 Shift 隐藏或显示 HUD。
+- Copy 图标识别与点击增加视觉定位、重复点击和辅助功能兜底。
+- 提供无需编译的一行安装和 GitHub Release 下载包。
 
-## 最关键的两扇门（不做这个，App 就是个摆设）
-
-安装脚本会打开系统设置，并把路径复制到剪贴板。路径永远是这一条：
-
-```text
-/Applications/Lecture Copilot.app
-```
-
-两扇门都打开之前，**不要打开 Lecture Copilot**。
-
-### 第一扇：屏幕录制
-
-用来框选老师的幻灯片。
-
-1. **系统设置 → 隐私与安全性 → 屏幕录制与系统音频录制**
-2. 点 **+**
-3. 按 `Command + Shift + G`
-4. 粘贴上面的路径，回车
-5. 打开右边开关，变成 **蓝色**
-
-### 第二扇：辅助功能
-
-用来帮你把截图塞进豆包，再把答案捞回来。
-
-1. **系统设置 → 隐私与安全性 → 辅助功能**
-2. 同样点 **+**，再 `Command + Shift + G`，粘贴同一条路径
-3. 开关变成 **蓝色**
-
-两扇都蓝了，再打开 App：
-
-```bash
-open "/Applications/Lecture Copilot.app"
-```
-
-或去启动台点 **Lecture Copilot**。
-
-菜单栏右上角会出现一顶小小的学士帽。那就是它。
-
-第一次真正发给豆包时，电脑可能再问：要不要让它控制 **System Events**？点 **允许**。这是最后一次弹窗。
-
-更细的步骤、卸载、翻车急救，看 [INSTALL.md](INSTALL.md)。
-
----
-
-## 上课怎么用
-
-先点学士帽，确认菜单里 **Class Mode** 打了勾。然后让课堂软件留在屏幕上，别切去豆包。
-
-| 你按的键 | 它帮你干啥 |
-|---|---|
-| `Shift + ←` | **Translate** 逐句英译中，上课对照着看 |
-| `Shift + →` | **Explain** 用短中文讲懂这页 |
-| `Shift + ↑` | **Direct Answer** 选择题直接给答案 |
-| `Shift + ↑↑`（很快连按两下） | **Say in Class** 给你一句能开口说的英文 |
-| `Shift + Return` | 切到豆包，点复制，把答案读到浮窗 |
-| `Shift + ↓` | 回到刚才的课堂窗口 |
-
-推荐动作，背下来就行：
-
-1. 按快捷键，拖一个框，把幻灯片圈进去  
-2. 人继续盯着老师，别去翻豆包  
-3. 感觉豆包该写完了，按 **Shift + Return**  
-4. 右上角出现一条 `Answer`；鼠标移上去展开，移开就缩回去
-
-浮窗上可以点 **Start Class**。上课后右边会一直有 **End**。Explain / Direct Answer / Say in Class 会自动记进这节课；Translate 默认不记。下课后把记录发给豆包总结，再按 **Shift + Return** 复制，可保存成 Markdown：
-
-```text
-~/Documents/Lecture Copilot/
-```
-
-它很安静。安静才是优点。
-
----
-
-## 常见翻车
-
-**窗口说没权限 / 快捷键没反应**  
-回去看那两扇门是不是蓝的。重新编译过一次，就要重新加路径，不要只拨一下旧开关。
-
-**能截图，但豆包没动静**  
-辅助功能没开，或第一次问 System Events 时点了不允许。
-
-**浮窗说还没读到回答**  
-豆包可能还在写。等它停一下，再按 Shift + Return。
-
-**我是 Windows**  
-这套工具跟你无缘，去找座位上的 Mac 同学。
-
----
-
-## 它不会干什么
-
-- 不用 API Key，也不会消耗你的 ChatGPT / Claude tokens  
-- 不会把你的课上传到「某个云端大模型账号」——它只去按本机豆包  
-- 不会保存全部历史聊天；课堂笔记可自己保存成 Markdown，调试文件仍只留最后一次截图和回答  
-- 不会替你举手发言（Speak 模式只是给你稿子）
-
-数据在：
-
-```text
-~/Library/Application Support/Lecture Copilot/
-```
-
-完整对话还在豆包自己的聊天记录里。
-
----
-
-## 开发者
-
-```bash
-./scripts/build_app.sh
-```
-
-会得到 `dist/Lecture Copilot.app`。每次重新打包，macOS 都当它是新 App，权限要重加。别人请用 `./install.sh` 装到 `/Applications`。
+完整更新记录见 [CHANGELOG.md](CHANGELOG.md)。

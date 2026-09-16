@@ -28,12 +28,9 @@ final class FloatingAnswerWindow {
     private var sessionSnapshot: ClassHUDSnapshot?
     private var stayOnSessionAfterClose = false
     private let actionBar = NSView()
-    private let primaryActionButton = NSButton(title: "", target: nil, action: nil)
-    private let secondaryActionButton = NSButton(title: "", target: nil, action: nil)
-    private let newActionButton = NSButton(title: "", target: nil, action: nil)
-    private let primaryActionTarget = ButtonTarget()
-    private let secondaryActionTarget = ButtonTarget()
-    private let newActionTarget = ButtonTarget()
+    private let primaryActionButton = HUDPillButton()
+    private let secondaryActionButton = HUDPillButton()
+    private let newActionButton = HUDPillButton()
     private let chipTarget = ButtonTarget()
     private let sessionActionTarget = ButtonTarget()
     private var modeChipToSessionConstraint: NSLayoutConstraint?
@@ -42,15 +39,21 @@ final class FloatingAnswerWindow {
     private var actionBarHeightConstraint: NSLayoutConstraint?
     private var actionBarBottomConstraint: NSLayoutConstraint?
     private var scrollToActionBarConstraint: NSLayoutConstraint?
+    private var newLeadingAfterPrimary: NSLayoutConstraint?
+    private var newLeadingAfterSecondary: NSLayoutConstraint?
+    private var actionIconFillConstraints: [NSLayoutConstraint] = []
+    private var actionIconSymbolConstraints: [NSLayoutConstraint] = []
     private var expandedSize = NSSize(width: 500, height: 590)
 
     var onStartClass: (() -> Void)?
     var onEndClass: (() -> Void)?
+    var onSummarizeClass: (() -> Void)?
     var onReviewNote: (() -> Void)?
     var onSaveNote: (() -> Void)?
     var onNewClass: (() -> Void)?
     private var headerBottomConstraint: NSLayoutConstraint?
     private var scrollBottomConstraint: NSLayoutConstraint?
+    private var userHidHUD = false
 
     private let collapsedHeight: CGFloat = 72
     private let collapsedMinWidth: CGFloat = 268
@@ -76,9 +79,20 @@ final class FloatingAnswerWindow {
 
     func showClassSession(_ snapshot: ClassHUDSnapshot, detail: String? = nil) {
         sessionSnapshot = snapshot
-        stayOnSessionAfterClose = snapshot.phase == .running || snapshot.phase == .summarizing || snapshot.phase == .summaryReady
-        let expand = snapshot.phase == .summaryReady || snapshot.phase == .summarizing || snapshot.phase == .saved
-        let action: CopilotAction? = (snapshot.phase == .summaryReady || snapshot.phase == .summarizing || snapshot.phase == .saved) ? .classSummary : nil
+        stayOnSessionAfterClose = snapshot.phase == .running
+            || snapshot.phase == .ended
+            || snapshot.phase == .summarizing
+            || snapshot.phase == .summaryReady
+        let expand = snapshot.phase == .ended
+            || snapshot.phase == .summaryReady
+            || snapshot.phase == .summarizing
+            || snapshot.phase == .saved
+        let action: CopilotAction? = (
+            snapshot.phase == .ended
+                || snapshot.phase == .summaryReady
+                || snapshot.phase == .summarizing
+                || snapshot.phase == .saved
+        ) ? .classSummary : nil
         show(
             title: sessionTitle(snapshot),
             text: detail ?? sessionBody(snapshot),
@@ -113,7 +127,6 @@ final class FloatingAnswerWindow {
         setDotPulsing(false)
         if stayOnSessionAfterClose,
            let sessionSnapshot,
-           sessionSnapshot.phase == .running,
            currentKind == "answer" || currentKind == "loading" {
             showClassSession(sessionSnapshot)
             return
@@ -121,6 +134,28 @@ final class FloatingAnswerWindow {
         panel?.orderOut(nil)
         hasPositioned = false
         isExpanded = false
+    }
+
+    var isHiddenByUser: Bool { userHidHUD }
+    var hasPanel: Bool { panel != nil }
+    var isPanelVisible: Bool { panel?.isVisible == true }
+
+    func toggleHiddenByUser() {
+        setHiddenByUser(!userHidHUD)
+    }
+
+    func setHiddenByUser(_ hidden: Bool) {
+        userHidHUD = hidden
+        if hidden {
+            panel?.orderOut(nil)
+            DebugLog.write("HUD hidden by double-shift")
+        } else if let panel {
+            if !hasPositioned {
+                position(panel)
+            }
+            panel.orderFrontRegardless()
+            DebugLog.write("HUD shown by double-shift")
+        }
     }
 
     private func show(title: String, text: String, kind: String, action: CopilotAction?, expand: Bool) {
@@ -141,7 +176,11 @@ final class FloatingAnswerWindow {
             position(panel)
         }
         applyExpanded(expand, animated: false)
-        panel.orderFrontRegardless()
+        if userHidHUD {
+            panel.orderOut(nil)
+        } else {
+            panel.orderFrontRegardless()
+        }
         textView.scrollToBeginningOfDocument(nil)
         LastOutputStore.save(kind: kind, action: action, title: title, text: text, panel: panel)
     }
@@ -153,7 +192,7 @@ final class FloatingAnswerWindow {
         if kind == "session", let sessionSnapshot {
             kickerLabel.stringValue = sessionSnapshot.phase == .idle ? "LECTURE COPILOT" : "CLASS SESSION"
             titleLabel.stringValue = sessionTitle(sessionSnapshot)
-            modeLabel.stringValue = sessionSnapshot.phase == .running
+            modeLabel.stringValue = sessionSnapshot.phase == .running || sessionSnapshot.phase == .ended
                 ? noteChipTitle(sessionSnapshot.interactionCount)
                 : sessionChipTitle(sessionSnapshot)
         } else if kind == "summary" || kind == "summary-loading" {
@@ -176,11 +215,25 @@ final class FloatingAnswerWindow {
 
         iconBadge.layer?.backgroundColor = accent.withAlphaComponent(0.14).cgColor
         iconBadge.layer?.borderColor = accent.withAlphaComponent(0.32).cgColor
-        actionIcon.image = NSImage(
-            systemSymbolName: actionSymbol(kind: kind, action: action),
-            accessibilityDescription: modeLabel.stringValue
-        )
-        actionIcon.contentTintColor = accent.blended(withFraction: 0.16, of: .white) ?? accent
+        let showBrandLogo = kind == "session" || kind == "summary" || kind == "summary-loading"
+        if showBrandLogo, let logo = BrandImage.hudLogo() {
+            actionIcon.image = logo
+            actionIcon.contentTintColor = nil
+            actionIcon.imageScaling = .scaleProportionallyUpOrDown
+            NSLayoutConstraint.deactivate(actionIconSymbolConstraints)
+            NSLayoutConstraint.activate(actionIconFillConstraints)
+            iconBadge.layer?.backgroundColor = NSColor.white.cgColor
+            iconBadge.layer?.borderColor = NSColor.white.withAlphaComponent(0.35).cgColor
+        } else {
+            actionIcon.image = NSImage(
+                systemSymbolName: actionSymbol(kind: kind, action: action),
+                accessibilityDescription: modeLabel.stringValue
+            )
+            actionIcon.contentTintColor = accent.blended(withFraction: 0.16, of: .white) ?? accent
+            actionIcon.imageScaling = .scaleProportionallyDown
+            NSLayoutConstraint.deactivate(actionIconFillConstraints)
+            NSLayoutConstraint.activate(actionIconSymbolConstraints)
+        }
 
         modeChip.layer?.backgroundColor = accent.withAlphaComponent(0.12).cgColor
         modeChip.layer?.borderColor = accent.withAlphaComponent(0.38).cgColor
@@ -422,9 +475,10 @@ final class FloatingAnswerWindow {
         iconBadge.layer?.cornerRadius = 15
         iconBadge.layer?.cornerCurve = .continuous
         iconBadge.layer?.borderWidth = 1
+        iconBadge.layer?.masksToBounds = true
         iconBadge.translatesAutoresizingMaskIntoConstraints = false
 
-        actionIcon.imageScaling = .scaleProportionallyDown
+        actionIcon.imageScaling = .scaleProportionallyUpOrDown
         actionIcon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
         actionIcon.translatesAutoresizingMaskIntoConstraints = false
 
@@ -518,18 +572,9 @@ final class FloatingAnswerWindow {
         scrollView.postsFrameChangedNotifications = true
 
         actionBar.translatesAutoresizingMaskIntoConstraints = false
-        styleActionButton(primaryActionButton)
-        styleActionButton(secondaryActionButton)
-        styleActionButton(newActionButton)
-        primaryActionTarget.onTap = { [weak self] in self?.handlePrimaryAction() }
-        secondaryActionTarget.onTap = { [weak self] in self?.handleSecondaryAction() }
-        newActionTarget.onTap = { [weak self] in self?.handleNewAction() }
-        primaryActionButton.target = primaryActionTarget
-        primaryActionButton.action = #selector(ButtonTarget.tap)
-        secondaryActionButton.target = secondaryActionTarget
-        secondaryActionButton.action = #selector(ButtonTarget.tap)
-        newActionButton.target = newActionTarget
-        newActionButton.action = #selector(ButtonTarget.tap)
+        primaryActionButton.onTap = { [weak self] in self?.handlePrimaryAction() }
+        secondaryActionButton.onTap = { [weak self] in self?.handleSecondaryAction() }
+        newActionButton.onTap = { [weak self] in self?.handleNewAction() }
         actionBar.addSubview(primaryActionButton)
         actionBar.addSubview(secondaryActionButton)
         actionBar.addSubview(newActionButton)
@@ -545,7 +590,7 @@ final class FloatingAnswerWindow {
         content.addSubview(headerView)
         headerView.addSubview(iconBadge)
         iconBadge.addSubview(actionIcon)
-        iconBadge.addSubview(statusDot)
+        headerView.addSubview(statusDot)
         headerView.addSubview(closeButton)
         headerView.addSubview(kickerLabel)
         headerView.addSubview(titleLabel)
@@ -602,11 +647,6 @@ final class FloatingAnswerWindow {
             iconBadge.widthAnchor.constraint(equalToConstant: 38),
             iconBadge.heightAnchor.constraint(equalToConstant: 38),
 
-            actionIcon.centerXAnchor.constraint(equalTo: iconBadge.centerXAnchor),
-            actionIcon.centerYAnchor.constraint(equalTo: iconBadge.centerYAnchor),
-            actionIcon.widthAnchor.constraint(equalToConstant: 20),
-            actionIcon.heightAnchor.constraint(equalToConstant: 20),
-
             statusDot.trailingAnchor.constraint(equalTo: iconBadge.trailingAnchor, constant: 2),
             statusDot.bottomAnchor.constraint(equalTo: iconBadge.bottomAnchor, constant: 2),
             statusDot.widthAnchor.constraint(equalToConstant: 7),
@@ -661,19 +701,38 @@ final class FloatingAnswerWindow {
 
             primaryActionButton.leadingAnchor.constraint(equalTo: actionBar.leadingAnchor),
             primaryActionButton.centerYAnchor.constraint(equalTo: actionBar.centerYAnchor),
+            primaryActionButton.heightAnchor.constraint(equalToConstant: HUDPillButton.height),
 
-            secondaryActionButton.leadingAnchor.constraint(equalTo: primaryActionButton.trailingAnchor, constant: 10),
+            secondaryActionButton.leadingAnchor.constraint(equalTo: primaryActionButton.trailingAnchor, constant: 8),
             secondaryActionButton.centerYAnchor.constraint(equalTo: actionBar.centerYAnchor),
+            secondaryActionButton.heightAnchor.constraint(equalToConstant: HUDPillButton.height),
 
-            newActionButton.leadingAnchor.constraint(equalTo: secondaryActionButton.trailingAnchor, constant: 10),
-            newActionButton.trailingAnchor.constraint(lessThanOrEqualTo: actionBar.trailingAnchor),
-            newActionButton.centerYAnchor.constraint(equalTo: actionBar.centerYAnchor)
+            newActionButton.centerYAnchor.constraint(equalTo: actionBar.centerYAnchor),
+            newActionButton.heightAnchor.constraint(equalToConstant: HUDPillButton.height),
+            newActionButton.trailingAnchor.constraint(lessThanOrEqualTo: actionBar.trailingAnchor)
         ])
 
         modeChipToSessionConstraint = modeChip.trailingAnchor.constraint(equalTo: sessionActionChip.leadingAnchor, constant: -8)
         modeChipToCloseConstraint = modeChip.trailingAnchor.constraint(equalTo: closeButton.leadingAnchor, constant: -9)
         sessionChipWidthConstraint = sessionActionChip.widthAnchor.constraint(equalToConstant: 0)
+        newLeadingAfterPrimary = newActionButton.leadingAnchor.constraint(equalTo: primaryActionButton.trailingAnchor, constant: 8)
+        newLeadingAfterSecondary = newActionButton.leadingAnchor.constraint(equalTo: secondaryActionButton.trailingAnchor, constant: 8)
+        newLeadingAfterSecondary?.isActive = true
         modeChipToSessionConstraint?.isActive = true
+
+        actionIconFillConstraints = [
+            actionIcon.leadingAnchor.constraint(equalTo: iconBadge.leadingAnchor),
+            actionIcon.trailingAnchor.constraint(equalTo: iconBadge.trailingAnchor),
+            actionIcon.topAnchor.constraint(equalTo: iconBadge.topAnchor),
+            actionIcon.bottomAnchor.constraint(equalTo: iconBadge.bottomAnchor)
+        ]
+        actionIconSymbolConstraints = [
+            actionIcon.centerXAnchor.constraint(equalTo: iconBadge.centerXAnchor),
+            actionIcon.centerYAnchor.constraint(equalTo: iconBadge.centerYAnchor),
+            actionIcon.widthAnchor.constraint(equalToConstant: 20),
+            actionIcon.heightAnchor.constraint(equalToConstant: 20)
+        ]
+        NSLayoutConstraint.activate(actionIconFillConstraints)
 
         frameObserver = NotificationCenter.default.addObserver(
             forName: NSView.frameDidChangeNotification,
@@ -694,32 +753,34 @@ final class FloatingAnswerWindow {
 
         switch kind {
         case "summary":
-            primaryActionButton.title = "Review Note"
-            secondaryActionButton.title = "Save"
-            newActionButton.title = "New"
+            primaryActionButton.apply(title: "Review Note", style: .primary)
+            secondaryActionButton.apply(title: "Save", style: .save)
+            newActionButton.apply(title: "New", style: .accent)
             primaryActionButton.isHidden = false
             secondaryActionButton.isHidden = false
             newActionButton.isHidden = false
-            actionBarHeightConstraint?.constant = 44
+            actionBarHeightConstraint?.constant = 48
+        case "session" where sessionSnapshot?.phase == .ended:
+            primaryActionButton.apply(title: "Summary", style: .primary)
+            newActionButton.apply(title: "New", style: .accent)
+            primaryActionButton.isHidden = false
+            newActionButton.isHidden = false
+            actionBarHeightConstraint?.constant = 48
         default:
             break
         }
+        newLeadingAfterSecondary?.isActive = !secondaryActionButton.isHidden
+        newLeadingAfterPrimary?.isActive = secondaryActionButton.isHidden
         actionBar.isHidden = actionBarHeightConstraint?.constant == 0
-    }
-
-    private func styleActionButton(_ button: NSButton) {
-        button.bezelStyle = .rounded
-        button.controlSize = .regular
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.setContentHuggingPriority(.required, for: .horizontal)
     }
 
     private func updateSessionActionButton() {
         let phase = sessionSnapshot?.phase
         let showStart = phase == .idle && currentKind == "session"
         let showEnd = phase == .running
-        let showNew = phase == .summaryReady || phase == .saved || currentKind == "summary"
-        let visible = showStart || showEnd || showNew
+        let showSummary = phase == .ended
+        let showRecord = phase == .summaryReady || phase == .saved || currentKind == "summary"
+        let visible = showStart || showEnd || showSummary || showRecord
 
         sessionActionChip.isHidden = !visible
         modeChip.isHidden = showStart
@@ -733,8 +794,11 @@ final class FloatingAnswerWindow {
         if showEnd {
             sessionActionLabel.stringValue = "End"
             accent = NSColor(calibratedRed: 1.0, green: 0.45, blue: 0.42, alpha: 1)
+        } else if showSummary || showRecord {
+            sessionActionLabel.stringValue = showRecord ? "Save" : "Summary"
+            accent = NSColor(calibratedRed: 0.95, green: 0.78, blue: 0.38, alpha: 1)
         } else {
-            sessionActionLabel.stringValue = showNew ? "New" : "Start"
+            sessionActionLabel.stringValue = "Start"
             accent = NSColor(calibratedRed: 0.42, green: 0.86, blue: 0.68, alpha: 1)
         }
         sessionActionChip.layer?.backgroundColor = accent.withAlphaComponent(0.18).cgColor
@@ -750,8 +814,10 @@ final class FloatingAnswerWindow {
             onEndClass?()
         } else if phase == .idle {
             onStartClass?()
+        } else if phase == .ended {
+            onSummarizeClass?()
         } else if phase == .summaryReady || phase == .saved || currentKind == "summary" {
-            onNewClass?()
+            onSaveNote?()
         }
     }
 
@@ -762,6 +828,8 @@ final class FloatingAnswerWindow {
     private func handlePrimaryAction() {
         if currentKind == "summary" {
             onReviewNote?()
+        } else if sessionSnapshot?.phase == .ended {
+            onSummarizeClass?()
         }
     }
 
@@ -772,14 +840,14 @@ final class FloatingAnswerWindow {
     }
 
     private func handleNewAction() {
-        if currentKind == "summary" {
+        if currentKind == "summary" || sessionSnapshot?.phase == .ended {
             onNewClass?()
         }
     }
 
     private func sessionKind(_ snapshot: ClassHUDSnapshot) -> String {
         switch snapshot.phase {
-        case .idle, .running:
+        case .idle, .running, .ended:
             return "session"
         case .summarizing:
             return "summary-loading"
@@ -794,6 +862,8 @@ final class FloatingAnswerWindow {
             return "Start Class"
         case .running:
             return ClassHUDSnapshot.durationText(snapshot.elapsed)
+        case .ended:
+            return "Class Ended"
         case .summarizing:
             return "Summarizing"
         case .summaryReady:
@@ -809,6 +879,8 @@ final class FloatingAnswerWindow {
             return "Start"
         case .running:
             return "End Class"
+        case .ended:
+            return "Summary"
         case .summarizing:
             return "Wait"
         case .summaryReady:
@@ -833,6 +905,13 @@ final class FloatingAnswerWindow {
             Duration: \(ClassHUDSnapshot.durationText(snapshot.elapsed))
 
             \(snapshot.interactionCount) interactions saved
+            """
+        case .ended:
+            return """
+            这节课已结束。
+
+            点 Summary 才发给豆包做总结。
+            不想总结就点 New 开新课。
             """
         case .summarizing:
             return "正在把这节课的记录发给豆包做总结。生成完成后会显示在这里。"
@@ -1143,6 +1222,124 @@ private final class HoverView: NSVisualEffectView {
 private final class PassthroughOverlay: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
+    }
+}
+
+private enum HUDActionStyle {
+    case primary
+    case save
+    case accent
+}
+
+private final class HUDPillButton: NSView {
+    static let height: CGFloat = 30
+
+    var onTap: (() -> Void)?
+
+    private let titleLabel = NSTextField(labelWithString: "")
+    private var fillColor = NSColor.systemBlue
+    private var trackingArea: NSTrackingArea?
+    private var isPressed = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        layer?.cornerCurve = .continuous
+        layer?.borderWidth = 1
+        layer?.masksToBounds = true
+        translatesAutoresizingMaskIntoConstraints = false
+        setContentHuggingPriority(.required, for: .horizontal)
+        setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        titleLabel.font = .systemFont(ofSize: 12.5, weight: .semibold)
+        titleLabel.textColor = .white
+        titleLabel.alignment = .center
+        titleLabel.drawsBackground = false
+        titleLabel.isBezeled = false
+        titleLabel.isEditable = false
+        titleLabel.isSelectable = false
+        titleLabel.lineBreakMode = .byClipping
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(titleLabel)
+
+        NSLayoutConstraint.activate([
+            titleLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
+            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 0.5),
+            titleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 14),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -14)
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var intrinsicContentSize: NSSize {
+        let textWidth = ceil(titleLabel.attributedStringValue.size().width)
+        return NSSize(width: max(84, textWidth + 28), height: Self.height)
+    }
+
+    func apply(title: String, style: HUDActionStyle) {
+        titleLabel.stringValue = title
+        switch style {
+        case .primary:
+            fillColor = NSColor(calibratedRed: 0.33, green: 0.60, blue: 0.96, alpha: 1)
+        case .save:
+            fillColor = NSColor(calibratedRed: 0.20, green: 0.70, blue: 0.60, alpha: 1)
+        case .accent:
+            fillColor = NSColor(calibratedRed: 0.94, green: 0.56, blue: 0.28, alpha: 1)
+        }
+        paint()
+        invalidateIntrinsicContentSize()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        paint(hovered: true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isPressed = false
+        paint()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        isPressed = true
+        paint(hovered: true)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let inside = bounds.contains(convert(event.locationInWindow, from: nil))
+        isPressed = false
+        paint(hovered: inside)
+        if inside {
+            onTap?()
+        }
+    }
+
+    private func paint(hovered: Bool = false) {
+        let color = isPressed
+            ? fillColor.shadow(withLevel: 0.12) ?? fillColor
+            : hovered
+                ? fillColor.highlight(withLevel: 0.08) ?? fillColor
+                : fillColor
+        layer?.backgroundColor = color.cgColor
+        layer?.borderColor = NSColor.white.withAlphaComponent(hovered ? 0.32 : 0.18).cgColor
     }
 }
 

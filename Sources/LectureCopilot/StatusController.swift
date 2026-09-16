@@ -11,6 +11,9 @@ protocol StatusControllerDelegate: AnyObject {
     func statusControllerDidChooseShortcutSettings(_ statusController: StatusController)
     func statusControllerDidChooseStartClass(_ statusController: StatusController)
     func statusControllerDidChooseEndClass(_ statusController: StatusController)
+    func statusControllerDidChooseSummarizeClass(_ statusController: StatusController)
+    func statusControllerDidChooseSaveNote(_ statusController: StatusController)
+    func statusControllerDidChooseNewClass(_ statusController: StatusController)
     func statusControllerDidToggleRecordTranslate(_ statusController: StatusController)
     func statusControllerDidChooseNotesFolder(_ statusController: StatusController)
 }
@@ -23,12 +26,15 @@ final class StatusController {
     func render(
         classModeEnabled: Bool,
         sessionRunning: Bool = false,
+        awaitingSummary: Bool = false,
+        summaryReady: Bool = false,
         recordTranslate: Bool = false,
         noteCount: Int = 0
     ) {
         statusItem.length = NSStatusItem.squareLength
         statusItem.button?.title = ""
         statusItem.button?.imagePosition = .imageOnly
+        statusItem.button?.imageScaling = .scaleProportionallyDown
         statusItem.button?.image = statusImage(classModeEnabled: classModeEnabled)
         statusItem.button?.toolTip = classModeEnabled ? "Lecture Copilot · Class Mode ON" : "Lecture Copilot"
 
@@ -49,6 +55,13 @@ final class StatusController {
         if sessionRunning {
             menu.addItem(targetedItem("End Class", selector: #selector(endClass)))
             menu.addItem(disabledItem("\(noteCount) notes saved", shortcut: ""))
+        } else if awaitingSummary {
+            menu.addItem(targetedItem("Summary", selector: #selector(summarizeClass)))
+            menu.addItem(targetedItem("New Class", selector: #selector(newClass)))
+            menu.addItem(disabledItem("\(noteCount) notes saved", shortcut: ""))
+        } else if summaryReady {
+            menu.addItem(targetedItem("Save", selector: #selector(saveNote)))
+            menu.addItem(targetedItem("New Class", selector: #selector(newClass)))
         } else {
             menu.addItem(targetedItem("Start Class", selector: #selector(startClass)))
         }
@@ -70,6 +83,7 @@ final class StatusController {
         menu.addItem(actionItem("Say in Class", shortcut: "⇧↑↑", action: .sayInClass))
         menu.addItem(disabledItem("Read Doubao Answer", shortcut: "⇧↩"))
         menu.addItem(actionItem("Back to Class", shortcut: "⇧↓", action: .backToClass))
+        menu.addItem(disabledItem("Hide / Show HUD", shortcut: "⇧⇧"))
         menu.addItem(.separator())
 
         menu.addItem(.sectionHeader(title: "Settings"))
@@ -92,19 +106,19 @@ final class StatusController {
     }
 
     private func statusImage(classModeEnabled: Bool) -> NSImage? {
-        if classModeEnabled {
-            let image = NSImage(
-                systemSymbolName: "graduationcap.fill",
-                accessibilityDescription: "Lecture Copilot"
-            )
-            image?.isTemplate = true
-            return image
+        if let logo = BrandImage.menuBarIcon() {
+            logo.accessibilityDescription = classModeEnabled
+                ? "Lecture Copilot · Class Mode ON"
+                : "Lecture Copilot"
+            return logo
         }
 
-        let blank = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in true }
-        blank.isTemplate = true
-        blank.accessibilityDescription = "Lecture Copilot"
-        return blank
+        let image = NSImage(
+            systemSymbolName: classModeEnabled ? "graduationcap.fill" : "graduationcap",
+            accessibilityDescription: "Lecture Copilot"
+        )
+        image?.isTemplate = true
+        return image
     }
 
     private func actionItem(_ title: String, shortcut: String, action: CopilotAction) -> NSMenuItem {
@@ -169,6 +183,18 @@ final class StatusController {
 
     @objc private func endClass() {
         delegate?.statusControllerDidChooseEndClass(self)
+    }
+
+    @objc private func summarizeClass() {
+        delegate?.statusControllerDidChooseSummarizeClass(self)
+    }
+
+    @objc private func saveNote() {
+        delegate?.statusControllerDidChooseSaveNote(self)
+    }
+
+    @objc private func newClass() {
+        delegate?.statusControllerDidChooseNewClass(self)
     }
 
     @objc private func toggleRecordTranslate() {

@@ -4,6 +4,10 @@ final class DoubaoAutomation {
     private let chatAppNames = ["豆包", "Doubao"]
     private let browserAppNames = ["豆包浏览器", "Doubao Browser"]
 
+    func isRunning() -> Bool {
+        runningChatApp() != nil || runningBrowserApp() != nil
+    }
+
     func activateDoubao() {
         if let running = runningChatApp() {
             DebugLog.write("Activating running Doubao chat app: \(running.localizedName ?? "unknown")")

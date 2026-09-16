@@ -48,4 +48,5 @@ enum HotKeyEvent {
     case shiftUp
     case shiftDown
     case returnKey
+    case toggleHUD
 }

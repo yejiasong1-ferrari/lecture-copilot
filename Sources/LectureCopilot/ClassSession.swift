@@ -31,6 +31,7 @@ struct ClassHUDSnapshot: Equatable {
     enum Phase: Equatable {
         case idle
         case running
+        case ended
         case summarizing
         case summaryReady
         case saved
