@@ -13,13 +13,8 @@
 - [ ] **不用 API Key**，不调用 OpenAI / Claude 等云端接口，不消耗那些 tokens。
 - [ ] 只操作本机 **豆包**（`豆包` / `Doubao` / `豆包浏览器`）。截图和 prompt 发给豆包，答案从豆包 Copy 回来。
 - [ ] 菜单栏有 logo，**Dock 里运行时也会出现圆角 logo**。顶部有时看不见时，点 Dock 图标会重新显示浮窗。桌面上的 **Lecture Copilot.app** 启动器点一下也会打开。
-- [ ] 开发副本路径永远是：
-
-```text
-/Users/jacksonyip/Desktop/Lecture Copilot/dist/Lecture Copilot.app
-```
-
-- [ ] 给别人装的路径是 `/Applications/Lecture Copilot.app`。Jackson 本机 **不要**跑 `./install.sh`。
+- [ ] 开发副本路径是仓库里的 `dist/Lecture Copilot.app`。
+- [ ] 给别人装的路径是 `/Applications/Lecture Copilot.app`。开发机上的调试副本 **不要**跑 `./install.sh`。
 - [ ] 每次 `./scripts/build_app.sh` 会改 ad-hoc 签名。必须重新加 **屏幕录制** 和 **辅助功能**，两个开关都蓝了才能打开 App。第一次豆包自动化可能再问 System Events。
 
 ---
@@ -193,7 +188,7 @@ Continuous Probability Distributions
 ~/Documents/Lecture Copilot/          # 用户保存的课堂笔记
 ```
 
-- [ ] 源码和 git 里 **没有** `/Users/jacksonyip` 硬编码进 App 运行逻辑（文档路径除外）。
+- [ ] 源码和 git 里 **没有**本机用户名路径硬编码进 App 运行逻辑（文档路径除外）。
 - [ ] 不把 `debug.log`、`dist/`、笔记截图提交进 git。
 
 ---
