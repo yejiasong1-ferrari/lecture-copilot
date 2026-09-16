@@ -9,3 +9,6 @@ dist/
 *.xcuserstate
 .env
 .env.*
+windows/**/bin/
+windows/**/obj/
+windows/dist/

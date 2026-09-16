@@ -9,6 +9,7 @@
 - Added automatic Doubao launch when Lecture Copilot starts.
 - Added a prebuilt Apple Silicon release package and one-line installer.
 - Reworked the README and installation manual for first-time users.
+- Added an isolated Windows 10/11 x64 edition with equivalent hotkeys, HUD, Doubao automation, class sessions, installer, and CI build.
 
 ## 1.0.0 — 2026-09-08
 

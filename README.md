@@ -11,17 +11,36 @@
 <p align="center">
   <a href="https://github.com/yejiasong1-ferrari/lecture-copilot/releases/latest"><img src="https://img.shields.io/badge/version-v1.1.0-4F8CFF" alt="v1.1.0"></a>
   <img src="https://img.shields.io/badge/macOS-14%2B-black?logo=apple" alt="macOS 14+">
+  <img src="https://img.shields.io/badge/Windows-10%2F11-1674EA?logo=windows" alt="Windows 10/11">
   <img src="https://img.shields.io/badge/download-Apple%20Silicon-8A63D2" alt="Apple Silicon download">
   <img src="https://img.shields.io/badge/API%20Key-not%20required-31B57B" alt="No API key required">
 </p>
 
-Lecture Copilot 是一个轻量的 macOS 课堂助手。按快捷键框选幻灯片后，它会短暂操作电脑上已经登录的豆包，再把结果放进右上角的玻璃浮窗。你可以继续看 Zoom、浏览器或课件，不必来回复制粘贴。
+Lecture Copilot 是一个轻量的 macOS 与 Windows 课堂助手。按快捷键框选幻灯片后，它会短暂操作电脑上已经登录的豆包，再把结果放进右上角的玻璃浮窗。你可以继续看 Zoom、浏览器或课件，不必来回复制粘贴。
 
 它适合英文授课、术语密集的课程、临时没听懂的概念，以及课后整理课堂记录。
 
-> 当前只支持 macOS 14 或更新版本。预编译下载包支持 Apple Silicon（M1/M2/M3/M4）；Intel Mac 可以从源码构建。
+> macOS 版支持 macOS 14+ 和 Apple Silicon；Intel Mac 可从源码构建。Windows 版支持 64 位 Windows 10/11 x64。两个版本的源码、安装器和本地数据完全隔离。
 
-## 最简单的安装方式
+## 选择你的系统
+
+### Windows 10 / 11
+
+从 [最新 Release](https://github.com/yejiasong1-ferrari/lecture-copilot/releases/latest) 下载并双击：
+
+```text
+Lecture-Copilot-Windows-x64-Setup.exe
+```
+
+或者在 PowerShell 运行带 SHA-256 验证的一行安装：
+
+```powershell
+irm https://raw.githubusercontent.com/yejiasong1-ferrari/lecture-copilot/main/windows/install.ps1 | iex
+```
+
+完整步骤和 Windows 故障排查见 [Windows 使用说明](windows/README.md)。
+
+### macOS 14+
 
 开始前先安装并登录豆包 Mac 客户端。
 
@@ -44,7 +63,7 @@ curl -fsSL https://raw.githubusercontent.com/yejiasong1-ferrari/lecture-copilot/
 2. **辅助功能**：重复同样步骤，并打开开关。
 3. 两个开关都打开后，再从桌面或「应用程序」启动 Lecture Copilot。
 
-需要逐屏说明、手动下载、更新、卸载和故障排查，请看 [完整安装说明](INSTALL.md)。
+需要逐屏说明、手动下载、更新、卸载和故障排查，请看 [macOS 完整安装说明](INSTALL.md)。
 
 ## 它能做什么
 
@@ -84,25 +103,17 @@ curl -fsSL https://raw.githubusercontent.com/yejiasong1-ferrari/lecture-copilot/
 5. 总结生成完后按 `Shift + Return`。
 6. 用 **Save** 保存 Markdown，或用 **New** 开始下一节课。
 
-默认保存目录：
-
-```text
-~/Documents/Lecture Copilot/
-```
+默认保存目录：macOS 为 `~/Documents/Lecture Copilot/`，Windows 为 `%USERPROFILE%\Documents\Lecture Copilot`。
 
 ## 为什么需要这些权限
 
-- **屏幕录制**：只用于你主动框选课堂内容时截图。
-- **辅助功能**：用于切换豆包、粘贴截图和提示词、点击 Copy，并返回课堂页面。
-- **自动化 / System Events**：macOS 第一次询问时请选择允许。
+- **macOS 屏幕录制**：只用于你主动框选课堂内容时截图。
+- **macOS 辅助功能与自动化**：用于切换豆包、粘贴内容、点击 Copy，并返回课堂页面。
+- **Windows**：使用系统截图工具和 Windows UI Automation，不需要上述 macOS 权限；Lecture Copilot 与豆包需使用相同权限等级。
 
 Lecture Copilot 不调用模型 API，也不需要 API Key，不会产生单独的 API 账单。你选中的截图和提示词会通过电脑上已登录的豆包客户端发送，并受豆包自身的服务和隐私政策约束。完整聊天仍保存在豆包中。
 
-本地运行数据位于：
-
-```text
-~/Library/Application Support/Lecture Copilot/
-```
+本地运行数据位于 macOS 的 `~/Library/Application Support/Lecture Copilot/`，或 Windows 的 `%LOCALAPPDATA%\Lecture Copilot`。
 
 ## 常见问题
 
@@ -122,11 +133,11 @@ Lecture Copilot 不调用模型 API，也不需要 API Key，不会产生单独�
 
 请使用上面的一行安装命令。安装器会校验 GitHub 下载包并清理下载隔离标记。当前版本使用 ad-hoc 签名，还没有 Apple 公证。
 
-**支持 Windows 或其他模型吗**
+**支持其他模型吗**
 
-当前版本只支持 macOS，并且自动化流程针对豆包桌面版。
+当前自动化流程针对豆包桌面版。macOS 与 Windows 都不调用模型 API。
 
-## 从源码安装
+## macOS 从源码安装
 
 适合开发者或 Intel Mac 用户。需要 Xcode Command Line Tools：
 
@@ -153,5 +164,6 @@ cd lecture-copilot
 - 双击 Shift 隐藏或显示 HUD。
 - Copy 图标识别与点击增加视觉定位、重复点击和辅助功能兜底。
 - 提供无需编译的一行安装和 GitHub Release 下载包。
+- 新增独立的 Windows 10/11 x64 版本、安装器和使用说明。
 
 完整更新记录见 [CHANGELOG.md](CHANGELOG.md)。

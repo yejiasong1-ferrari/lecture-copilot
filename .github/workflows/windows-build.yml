@@ -1,0 +1,58 @@
+name: Windows build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'windows/**'
+      - '.github/workflows/windows-build.yml'
+  pull_request:
+    paths:
+      - 'windows/**'
+      - '.github/workflows/windows-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build with warnings as errors
+        shell: pwsh
+        run: dotnet build windows/LectureCopilot.Windows/LectureCopilot.Windows.csproj -c Release -warnaserror -p:SelfContained=false -p:PublishSingleFile=false
+
+      - name: Publish self-contained application
+        shell: pwsh
+        run: dotnet publish windows/LectureCopilot.Windows/LectureCopilot.Windows.csproj -c Release -r win-x64 --self-contained true -o windows/dist/win-x64
+
+      - name: Run non-interactive self-test
+        shell: pwsh
+        run: |
+          & 'windows/dist/win-x64/Lecture Copilot.exe' --self-test
+          if ($LASTEXITCODE -ne 0) { throw "Self-test failed with exit code $LASTEXITCODE" }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer and checksum
+        shell: pwsh
+        run: ./windows/build.ps1
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lecture-Copilot-Windows-x64
+          if-no-files-found: error
+          path: |
+            windows/dist/installer/Lecture-Copilot-Windows-x64-Setup.exe
+            windows/dist/installer/Lecture-Copilot-Windows-x64-Setup.exe.sha256

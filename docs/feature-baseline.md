@@ -1,4 +1,4 @@
-# Lecture Copilot 功能基线
+# Lecture Copilot macOS 功能基线
 
 改代码之后，用这份清单核对：**现有功能有没有被改掉、删掉、行为跑偏**。
 记录日期：2026-09-11。对应本机产品身份 **v1.0 · Mac only**（`CFBundleShortVersionString` = `1.0.0`，bundle `com.local.lecturecopilot`）。
@@ -9,7 +9,7 @@
 
 ## 产品边界（不能破）
 
-- [ ] 只支持 **macOS 14+**。没有 Windows。
+- [ ] 本清单只约束独立的 **macOS 14+** Swift 版本；Windows 版位于 `windows/`，不能改变这里的运行行为。
 - [ ] **不用 API Key**，不调用 OpenAI / Claude 等云端接口，不消耗那些 tokens。
 - [ ] 只操作本机 **豆包**（`豆包` / `Doubao` / `豆包浏览器`）。截图和 prompt 发给豆包，答案从豆包 Copy 回来。
 - [ ] 菜单栏有 logo，**Dock 里运行时也会出现圆角 logo**。顶部有时看不见时，点 Dock 图标会重新显示浮窗。桌面上的 **Lecture Copilot.app** 启动器点一下也会打开。
