@@ -18,7 +18,7 @@
   &nbsp;
   <a href="https://github.com/yejiasong1-ferrari/lecture-copilot/releases/latest"><img src="https://img.shields.io/badge/macOS-一行安装-black?logo=apple" alt="Install on macOS"></a>
   &nbsp;
-  <img src="https://img.shields.io/badge/version-v1.1.0-4F8CFF" alt="v1.1.0">
+  <img src="https://img.shields.io/badge/version-v1.0-4F8CFF" alt="v1.0">
   <img src="https://img.shields.io/badge/API%20Key-not%20required-31B57B" alt="No API key required">
 </p>
 
@@ -147,7 +147,7 @@ Class Mode 要打开。Mac 还要检查辅助功能。别的软件可能抢了�
 
 ---
 
-## v1.1.0
+## v1.0
 
 - Mac / Windows 都能用，安装器和数据互不影响。
 - Start / End / Summary / Save / New，下课再决定要不要总结。

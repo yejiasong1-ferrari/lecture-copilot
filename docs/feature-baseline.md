@@ -1,7 +1,7 @@
 # Lecture Copilot macOS 功能基线
 
 改代码之后，用这份清单核对：**现有功能有没有被改掉、删掉、行为跑偏**。
-记录日期：2026-09-11。对应本机产品身份 **v1.0 · Mac only**（`CFBundleShortVersionString` = `1.0.0`，bundle `com.local.lecturecopilot`）。
+记录日期：2026-09-16。对应产品身份 **v1.0**（macOS + Windows；bundle `com.local.lecturecopilot`）。
 
 模式输出细则仍以 `PromptStore.swift` 和 `~/Library/Application Support/Lecture Copilot/prompts.json` 为准。`docs/modes.md` 里有过时描述（例如用裸 Return 提取），不要拿它当现状。
 
