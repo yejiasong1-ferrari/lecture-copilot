@@ -9,9 +9,9 @@ final class DoubaoAutomation {
     }
 
     func activateDoubao() {
-        if let running = runningChatApp() {
+        if let running = DoubaoWindow.runningChatApp() {
             DebugLog.write("Activating running Doubao chat app: \(running.localizedName ?? "unknown")")
-            running.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+            _ = DoubaoWindow.makeFrontmost()
             return
         }
 
@@ -58,7 +58,7 @@ final class DoubaoAutomation {
     }
 
     private func runningChatApp() -> NSRunningApplication? {
-        appsNamed(chatAppNames).first
+        DoubaoWindow.runningChatApp()
     }
 
     private func runningBrowserApp() -> NSRunningApplication? {

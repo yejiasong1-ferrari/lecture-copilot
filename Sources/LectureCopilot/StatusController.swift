@@ -34,7 +34,7 @@ final class StatusController {
         statusItem.length = NSStatusItem.squareLength
         statusItem.button?.title = ""
         statusItem.button?.imagePosition = .imageOnly
-        statusItem.button?.imageScaling = .scaleProportionallyDown
+        statusItem.button?.imageScaling = .scaleProportionallyUpOrDown
         statusItem.button?.image = statusImage(classModeEnabled: classModeEnabled)
         statusItem.button?.toolTip = classModeEnabled ? "Lecture Copilot · Class Mode ON" : "Lecture Copilot"
 

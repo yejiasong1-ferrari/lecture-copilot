@@ -3,7 +3,6 @@ import ApplicationServices
 import Vision
 
 final class DoubaoResponseReader {
-    private let chatAppNames = ["豆包", "Doubao"]
     private let browserAppNames = ["豆包浏览器", "Doubao Browser"]
     private let copyIconFinder = CopyIconFinder()
     private let defaultCopyXRatio: CGFloat = 0.248
@@ -1233,7 +1232,7 @@ final class DoubaoResponseReader {
     }
 
     private func runningDoubaoProcesses() -> [NSRunningApplication] {
-        let chat = appsNamed(chatAppNames)
+        let chat = NSWorkspace.shared.runningApplications.filter(DoubaoWindow.isChatApp)
         if !chat.isEmpty {
             return chat
         }
@@ -1247,7 +1246,7 @@ final class DoubaoResponseReader {
     }
 
     private func activateChatApp() {
-        runningDoubaoProcesses().first?.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+        _ = DoubaoWindow.makeFrontmost(timeout: 3.0)
     }
 
     private func captureLargestDoubaoWindow() -> CGImage? {

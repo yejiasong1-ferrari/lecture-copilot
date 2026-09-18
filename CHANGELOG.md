@@ -10,6 +10,7 @@
 - Added a prebuilt Apple Silicon release package and one-line installer.
 - Reworked the README and installation manual for first-time users.
 - Added an isolated Windows 10/11 x64 edition with equivalent hotkeys, HUD, Doubao automation, class sessions, installer, and CI build.
+- Mac classroom build (2026-09-18): smoother HUD hover, in-HUD confirm/save so dialogs stay on the lecture Space, more reliable Doubao frontmost/paste, and Speak always captures a fresh screenshot.
 
 ## 1.0.0 — 2026-09-08
 

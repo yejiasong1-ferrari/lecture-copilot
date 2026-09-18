@@ -242,61 +242,55 @@ final class LectureCopilotController {
     }
 
     func startClass() {
-        if sessionStore.session?.summary != nil, sessionStore.session?.savePath == nil {
-            NSApp.activate(ignoringOtherApps: true)
-            let alert = NSAlert()
-            alert.messageText = "Start a new class?"
-            alert.informativeText = "上一节课的总结还没保存。"
-            alert.addButton(withTitle: "Start New Class")
-            alert.addButton(withTitle: "Cancel")
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
-        } else if isAwaitingSummary {
-            NSApp.activate(ignoringOtherApps: true)
-            let alert = NSAlert()
-            alert.messageText = "Start a new class?"
-            alert.informativeText = "上一节课还没做总结。"
-            alert.addButton(withTitle: "Start New Class")
-            alert.addButton(withTitle: "Cancel")
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
-        } else if isSessionRunning {
+        if isSessionRunning {
             return
         }
-
-        _ = sessionStore.start()
-        pendingInteractionID = nil
-        startSessionTimerIfNeeded()
-        floatingWindow.showClassSession(sessionStore.snapshot())
-        onSessionChanged?()
-        DebugLog.write("Class session HUD started")
+        if sessionStore.session?.summary != nil, sessionStore.session?.savePath == nil {
+            floatingWindow.confirm(
+                title: "Start a new class?",
+                message: "上一节课的总结还没保存。",
+                confirmTitle: "Start New Class"
+            ) { [weak self] in
+                self?.beginClass()
+            }
+            return
+        }
+        if isAwaitingSummary {
+            floatingWindow.confirm(
+                title: "Start a new class?",
+                message: "上一节课还没做总结。",
+                confirmTitle: "Start New Class"
+            ) { [weak self] in
+                self?.beginClass()
+            }
+            return
+        }
+        beginClass()
     }
 
     func newClass() {
         guard !isSessionRunning else { return }
         if sessionStore.session?.summary != nil, sessionStore.session?.savePath == nil {
-            NSApp.activate(ignoringOtherApps: true)
-            let alert = NSAlert()
-            alert.messageText = "Start a new class?"
-            alert.informativeText = "上一节课的总结还没保存。"
-            alert.addButton(withTitle: "New Class")
-            alert.addButton(withTitle: "Cancel")
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
-        } else if isAwaitingSummary {
-            NSApp.activate(ignoringOtherApps: true)
-            let alert = NSAlert()
-            alert.messageText = "Start a new class?"
-            alert.informativeText = "上一节课还没做总结。"
-            alert.addButton(withTitle: "New Class")
-            alert.addButton(withTitle: "Cancel")
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            floatingWindow.confirm(
+                title: "Start a new class?",
+                message: "上一节课的总结还没保存。",
+                confirmTitle: "New Class"
+            ) { [weak self] in
+                self?.resetClass()
+            }
+            return
         }
-
-        pendingRead = nil
-        pendingInteractionID = nil
-        stopSessionTimer()
-        sessionStore.clear()
-        floatingWindow.showClassSession(.idle)
-        onSessionChanged?()
-        DebugLog.write("Class session HUD reset to Start")
+        if isAwaitingSummary {
+            floatingWindow.confirm(
+                title: "Start a new class?",
+                message: "上一节课还没做总结。",
+                confirmTitle: "New Class"
+            ) { [weak self] in
+                self?.resetClass()
+            }
+            return
+        }
+        resetClass()
     }
 
     func endClass() {
@@ -306,14 +300,35 @@ final class LectureCopilotController {
             return
         }
 
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.messageText = "End Class?"
-        alert.informativeText = "停止计时。需要总结时再点 Summary。"
-        alert.addButton(withTitle: "End Class")
-        alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        floatingWindow.confirm(
+            title: "End Class?",
+            message: "停止计时。需要总结时再点 Summary。",
+            confirmTitle: "End Class"
+        ) { [weak self] in
+            self?.finishEndClass()
+        }
+    }
 
+    private func beginClass() {
+        _ = sessionStore.start()
+        pendingInteractionID = nil
+        startSessionTimerIfNeeded()
+        floatingWindow.showClassSession(sessionStore.snapshot())
+        onSessionChanged?()
+        DebugLog.write("Class session HUD started")
+    }
+
+    private func resetClass() {
+        pendingRead = nil
+        pendingInteractionID = nil
+        stopSessionTimer()
+        sessionStore.clear()
+        floatingWindow.showClassSession(.idle)
+        onSessionChanged?()
+        DebugLog.write("Class session HUD reset to Start")
+    }
+
+    private func finishEndClass() {
         _ = sessionStore.end()
         stopSessionTimer()
         onSessionChanged?()
@@ -345,7 +360,6 @@ final class LectureCopilotController {
     }
 
     func saveClassNote() {
-        NSApp.activate(ignoringOtherApps: true)
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
         panel.directoryURL = sessionStore.notesRoot
@@ -353,16 +367,18 @@ final class LectureCopilotController {
         panel.title = "Save Class Note"
         panel.message = "Name this summary and choose where to save it. Screenshots go in a matching shots folder."
         panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try sessionStore.writeNote(to: url)
-            floatingWindow.showClassSession(
-                sessionStore.snapshot(),
-                detail: "已保存到\n\(url.path)"
-            )
-            onSessionChanged?()
-        } catch {
-            floatingWindow.showLoading("保存失败：\(error.localizedDescription)", action: .classSummary)
+        floatingWindow.presentSavePanel(panel) { [weak self] url in
+            guard let self, let url else { return }
+            do {
+                try self.sessionStore.writeNote(to: url)
+                self.floatingWindow.showClassSession(
+                    self.sessionStore.snapshot(),
+                    detail: "已保存到\n\(url.path)"
+                )
+                self.onSessionChanged?()
+            } catch {
+                self.floatingWindow.showLoading("保存失败：\(error.localizedDescription)", action: .classSummary)
+            }
         }
     }
 
@@ -429,20 +445,26 @@ final class LectureCopilotController {
 
     private func handleShiftUp() {
         let now = Date()
-        let isDoublePress = lastShiftUpAt.map { now.timeIntervalSince($0) <= 0.6 } ?? false
+        if let last = lastShiftUpAt, now.timeIntervalSince(last) < 0.16 {
+            DebugLog.write("Shift+Up ignored as key repeat")
+            return
+        }
+
+        let isDoublePress = lastShiftUpAt.map { now.timeIntervalSince($0) <= 0.62 } ?? false
         lastShiftUpAt = now
 
         if isDoublePress {
             shiftUpSequence += 1
+            DebugLog.write("Shift+Up double-press: Say in Class, will screenshot")
             run(.sayInClass)
         } else {
             shiftUpSequence += 1
             let sequence = shiftUpSequence
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.62) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.64) { [weak self] in
                 guard let self,
                       self.shiftUpSequence == sequence,
                       let lastShiftUpAt = self.lastShiftUpAt,
-                      Date().timeIntervalSince(lastShiftUpAt) >= 0.6 else { return }
+                      Date().timeIntervalSince(lastShiftUpAt) >= 0.62 else { return }
                 self.run(.directAnswer)
             }
         }
@@ -453,12 +475,6 @@ final class LectureCopilotController {
 
         guard let promptKey = action.promptKey else { return }
         let prompt = prompts.prompt(for: promptKey)
-
-        if action == .sayInClass, imageCache.restoreToPasteboardIfFresh() {
-            DebugLog.write("Using fresh cached image for Say in Class")
-            sendAndShowAnswer(prompt: prompt, action: action)
-            return
-        }
 
         if useLastCapture {
             DebugLog.write("Using last capture for \(action)")
@@ -843,8 +859,7 @@ final class LectureCopilotController {
     }
 
     private func isDoubaoApp(_ app: NSRunningApplication) -> Bool {
-        let name = app.localizedName ?? ""
-        return ["豆包", "Doubao", "豆包浏览器", "Doubao Browser"].contains(name)
+        DoubaoWindow.isChatApp(app) || ["豆包浏览器", "Doubao Browser"].contains(app.localizedName ?? "")
     }
 }
 

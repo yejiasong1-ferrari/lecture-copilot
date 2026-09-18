@@ -118,8 +118,17 @@ guard iconutil.terminationStatus == 0 else {
     exit(1)
 }
 
-let statusPNG = pngData(pixels: 44) { rect in
-    drawLogo(in: rect.insetBy(dx: 1, dy: 1))
+let statusPNG = pngData(pixels: 66) { rect in
+    let box = rect.insetBy(dx: 1.5, dy: 1.5)
+    let radius = box.width * 0.32
+    let clip = NSBezierPath(roundedRect: box, xRadius: radius, yRadius: radius)
+    clip.addClip()
+    NSColor.white.setFill()
+    clip.fill()
+    drawLogo(in: box.insetBy(dx: 8, dy: 8))
+    NSColor(calibratedRed: 0.52, green: 0.66, blue: 0.80, alpha: 1).setStroke()
+    clip.lineWidth = 1.5
+    clip.stroke()
 }
 let hudPNG = pngData(pixels: 128) { rect in
     drawLogoFill(in: rect)

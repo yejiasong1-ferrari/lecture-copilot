@@ -112,6 +112,16 @@ enum AXAccess {
         AXUIElementPerformAction(element, kAXPressAction as CFString) == .success
     }
 
+    static func raise(_ element: AXUIElement) -> Bool {
+        AXUIElementPerformAction(element, kAXRaiseAction as CFString) == .success
+    }
+
+    static func makeMainWindow(_ element: AXUIElement) {
+        AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
+        AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        _ = raise(element)
+    }
+
     static func find(_ root: AXUIElement, depth: Int = 0, maxDepth: Int = 20, match: (AXUIElement) -> Bool) -> AXUIElement? {
         if match(root) {
             return root

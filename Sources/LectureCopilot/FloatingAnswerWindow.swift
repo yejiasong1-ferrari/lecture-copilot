@@ -3,19 +3,18 @@ import QuartzCore
 
 final class FloatingAnswerWindow {
     private var panel: NSPanel?
-    private let headerView = NSView()
+    private let headerView = HUDDragRegion()
     private let closeButton = NSButton()
-    private let iconBadge = NSView()
-    private let actionIcon = NSImageView()
-    private let statusDot = NSView()
-    private let kickerLabel = NSTextField(labelWithString: "LECTURE COPILOT")
-    private let titleLabel = NSTextField(labelWithString: "Answer")
-    private let modeChip = NSView()
-    private let modeLabel = NSTextField(labelWithString: "")
-    private let sessionActionChip = NSView()
-    private let sessionActionLabel = NSTextField(labelWithString: "")
-    private let hairline = NSView()
-    private let accentLine = NSView()
+    private let iconBadge = HUDPassthroughView()
+    private let actionIcon = HUDPassthroughImageView()
+    private let statusDot = HUDPassthroughView()
+    private let kickerLabel = HUDPassthroughLabel(text: "LECTURE COPILOT")
+    private let titleLabel = HUDPassthroughLabel(text: "Answer")
+    private let modeChip = HUDClickRegion()
+    private let modeLabel = HUDPassthroughLabel(text: "")
+    private let sessionActionChip = HUDHeaderChip()
+    private let hairline = HUDPassthroughView()
+    private let accentLine = HUDPassthroughView()
     private let textView = NSTextView()
     private let scrollView = NSScrollView()
     private let closeTarget = ButtonTarget()
@@ -23,6 +22,11 @@ final class FloatingAnswerWindow {
     private var frameObserver: NSObjectProtocol?
     private var isExpanded = false
     private var collapseWork: DispatchWorkItem?
+    private var isApplyingHoverLayout = false
+    private var wantsHoverCollapse = false
+    private var pinsExpanded = false
+    private var hoverGeneration = 0
+    private let confirmOverlay = HUDConfirmOverlay()
     private var currentKind = "answer"
     private var currentAction: CopilotAction?
     private var sessionSnapshot: ClassHUDSnapshot?
@@ -32,7 +36,6 @@ final class FloatingAnswerWindow {
     private let secondaryActionButton = HUDPillButton()
     private let newActionButton = HUDPillButton()
     private let chipTarget = ButtonTarget()
-    private let sessionActionTarget = ButtonTarget()
     private var modeChipToSessionConstraint: NSLayoutConstraint?
     private var modeChipToCloseConstraint: NSLayoutConstraint?
     private var sessionChipWidthConstraint: NSLayoutConstraint?
@@ -124,6 +127,7 @@ final class FloatingAnswerWindow {
 
     func close() {
         collapseWork?.cancel()
+        dismissConfirm()
         setDotPulsing(false)
         if stayOnSessionAfterClose,
            let sessionSnapshot,
@@ -140,6 +144,96 @@ final class FloatingAnswerWindow {
     var hasPanel: Bool { panel != nil }
     var isPanelVisible: Bool { panel?.isVisible == true }
 
+    func confirm(
+        title: String,
+        message: String,
+        confirmTitle: String,
+        onConfirm: @escaping () -> Void
+    ) {
+        if panel == nil {
+            buildPanel()
+        }
+        pinsExpanded = true
+        collapseWork?.cancel()
+        wantsHoverCollapse = false
+        panel?.ignoresMouseEvents = false
+        applyExpanded(true, animated: true)
+        panel?.orderFrontRegardless()
+        confirmOverlay.present(
+            title: title,
+            message: message,
+            confirmTitle: confirmTitle,
+            style: .accent,
+            onConfirm: { [weak self] in
+                self?.dismissConfirm()
+                onConfirm()
+            },
+            onCancel: { [weak self] in
+                self?.dismissConfirm()
+            }
+        )
+    }
+
+    func presentSavePanel(_ savePanel: NSSavePanel, completion: @escaping (URL?) -> Void) {
+        guard let host = panel else {
+            savePanel.begin { response in
+                completion(response == .OK ? savePanel.url : nil)
+            }
+            return
+        }
+
+        pinsExpanded = true
+        collapseWork?.cancel()
+        wantsHoverCollapse = false
+        host.ignoresMouseEvents = false
+        applyExpanded(true, animated: true)
+        host.orderFrontRegardless()
+
+        savePanel.beginSheetModal(for: host) { [weak self] response in
+            self?.pinsExpanded = false
+            completion(response == .OK ? savePanel.url : nil)
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.keepAccessoryWindowsWithHUD(host)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            self?.keepAccessoryWindowsWithHUD(host)
+        }
+    }
+
+    private func keepAccessoryWindowsWithHUD(_ host: NSWindow) {
+        for window in NSApp.windows where window !== host {
+            let isAccessory = window.parent === host
+                || window.isSheet
+                || window.level >= .modalPanel
+                || window is NSSavePanel
+            guard isAccessory, window.isVisible else { continue }
+            window.collectionBehavior.insert(.canJoinAllSpaces)
+            window.collectionBehavior.insert(.fullScreenAuxiliary)
+            window.level = NSWindow.Level(rawValue: host.level.rawValue + 4)
+            var frame = window.frame
+            frame.origin.x = host.frame.midX - frame.width / 2
+            frame.origin.y = host.frame.midY - frame.height / 2
+            if let visible = host.screen?.visibleFrame ?? NSScreen.main?.visibleFrame {
+                frame.origin.x = min(max(frame.origin.x, visible.minX + 12), visible.maxX - frame.width - 12)
+                frame.origin.y = min(max(frame.origin.y, visible.minY + 12), visible.maxY - frame.height - 12)
+            }
+            window.setFrame(frame, display: true)
+            window.orderFrontRegardless()
+            window.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    private func dismissConfirm() {
+        confirmOverlay.dismiss()
+        pinsExpanded = false
+        panel?.ignoresMouseEvents = false
+        if !isMouseOverHUD(), isExpanded {
+            wantsHoverCollapse = true
+            scheduleCollapseIfNeeded()
+        }
+    }
+
     func toggleHiddenByUser() {
         setHiddenByUser(!userHidHUD)
     }
@@ -147,12 +241,14 @@ final class FloatingAnswerWindow {
     func setHiddenByUser(_ hidden: Bool) {
         userHidHUD = hidden
         if hidden {
+            dismissConfirm()
             panel?.orderOut(nil)
             DebugLog.write("HUD hidden by double-shift")
         } else if let panel {
             if !hasPositioned {
                 position(panel)
             }
+            panel.ignoresMouseEvents = false
             panel.orderFrontRegardless()
             DebugLog.write("HUD shown by double-shift")
         }
@@ -166,6 +262,10 @@ final class FloatingAnswerWindow {
         currentKind = kind
         currentAction = action
         guard let panel else { return }
+        if !confirmOverlay.isHidden {
+            dismissConfirm()
+        }
+        panel.ignoresMouseEvents = false
         panel.title = title
         configurePresentation(kind: kind, action: action)
         configureActionBar(kind: kind)
@@ -175,11 +275,12 @@ final class FloatingAnswerWindow {
         if !panel.isVisible || !hasPositioned {
             position(panel)
         }
-        applyExpanded(expand, animated: false)
+        applyExpanded(expand || isMouseOverHUD(), animated: false)
         if userHidHUD {
             panel.orderOut(nil)
         } else {
             panel.orderFrontRegardless()
+            reconcileHoverState()
         }
         textView.scrollToBeginningOfDocument(nil)
         LastOutputStore.save(kind: kind, action: action, title: title, text: text, panel: panel)
@@ -408,11 +509,16 @@ final class FloatingAnswerWindow {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
+        panel.isMovable = true
         panel.isMovableByWindowBackground = true
+        panel.becomesKeyOnlyIfNeeded = true
+        panel.acceptsMouseMovedEvents = true
+        panel.ignoresMouseEvents = false
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false
         panel.appearance = darkAppearance
+        panel.animationBehavior = .utilityWindow
         panel.minSize = windowSize(cardWidth: 320, cardHeight: collapsedHeight)
 
         let root = ClearRootView(frame: NSRect(origin: .zero, size: initial))
@@ -512,18 +618,7 @@ final class FloatingAnswerWindow {
         modeLabel.alignment = .center
         modeLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        sessionActionChip.wantsLayer = true
-        sessionActionChip.layer?.cornerRadius = 11
-        sessionActionChip.layer?.cornerCurve = .continuous
-        sessionActionChip.layer?.borderWidth = 1
-        sessionActionChip.setContentCompressionResistancePriority(.required, for: .horizontal)
-        sessionActionChip.setContentHuggingPriority(.required, for: .horizontal)
-        sessionActionChip.translatesAutoresizingMaskIntoConstraints = false
-
-        sessionActionLabel.font = .systemFont(ofSize: 10.5, weight: .semibold)
-        sessionActionLabel.alignment = .center
-        sessionActionLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
-        sessionActionLabel.translatesAutoresizingMaskIntoConstraints = false
+        sessionActionChip.onTap = { [weak self] in self?.handleSessionActionTap() }
 
         hairline.wantsLayer = true
         hairline.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.16).cgColor
@@ -571,6 +666,7 @@ final class FloatingAnswerWindow {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.postsFrameChangedNotifications = true
 
+        actionBar.wantsLayer = true
         actionBar.translatesAutoresizingMaskIntoConstraints = false
         primaryActionButton.onTap = { [weak self] in self?.handlePrimaryAction() }
         secondaryActionButton.onTap = { [weak self] in self?.handleSecondaryAction() }
@@ -582,9 +678,6 @@ final class FloatingAnswerWindow {
         chipTarget.onTap = { [weak self] in self?.handleChipTap() }
         let chipClick = NSClickGestureRecognizer(target: chipTarget, action: #selector(ButtonTarget.tap))
         modeChip.addGestureRecognizer(chipClick)
-        sessionActionTarget.onTap = { [weak self] in self?.handleSessionActionTap() }
-        let sessionClick = NSClickGestureRecognizer(target: sessionActionTarget, action: #selector(ButtonTarget.tap))
-        sessionActionChip.addGestureRecognizer(sessionClick)
 
         content.addSubview(glassTint)
         content.addSubview(headerView)
@@ -597,12 +690,14 @@ final class FloatingAnswerWindow {
         headerView.addSubview(modeChip)
         modeChip.addSubview(modeLabel)
         headerView.addSubview(sessionActionChip)
-        sessionActionChip.addSubview(sessionActionLabel)
         content.addSubview(hairline)
         content.addSubview(accentLine)
         content.addSubview(scrollView)
         content.addSubview(actionBar)
         content.addSubview(glassBorder)
+        content.addSubview(confirmOverlay)
+        confirmOverlay.translatesAutoresizingMaskIntoConstraints = false
+        confirmOverlay.isHidden = true
 
         let headerBottom = headerView.bottomAnchor.constraint(equalTo: content.bottomAnchor)
         let scrollBottom = scrollView.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -14)
@@ -677,10 +772,6 @@ final class FloatingAnswerWindow {
             sessionActionChip.trailingAnchor.constraint(equalTo: closeButton.leadingAnchor, constant: -9),
             sessionActionChip.heightAnchor.constraint(equalToConstant: 24),
 
-            sessionActionLabel.leadingAnchor.constraint(equalTo: sessionActionChip.leadingAnchor, constant: 10),
-            sessionActionLabel.trailingAnchor.constraint(equalTo: sessionActionChip.trailingAnchor, constant: -10),
-            sessionActionLabel.centerYAnchor.constraint(equalTo: sessionActionChip.centerYAnchor),
-
             hairline.topAnchor.constraint(equalTo: headerView.bottomAnchor),
             hairline.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 16),
             hairline.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
@@ -709,7 +800,12 @@ final class FloatingAnswerWindow {
 
             newActionButton.centerYAnchor.constraint(equalTo: actionBar.centerYAnchor),
             newActionButton.heightAnchor.constraint(equalToConstant: HUDPillButton.height),
-            newActionButton.trailingAnchor.constraint(lessThanOrEqualTo: actionBar.trailingAnchor)
+            newActionButton.trailingAnchor.constraint(lessThanOrEqualTo: actionBar.trailingAnchor),
+
+            confirmOverlay.topAnchor.constraint(equalTo: content.topAnchor),
+            confirmOverlay.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            confirmOverlay.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            confirmOverlay.bottomAnchor.constraint(equalTo: content.bottomAnchor)
         ])
 
         modeChipToSessionConstraint = modeChip.trailingAnchor.constraint(equalTo: sessionActionChip.leadingAnchor, constant: -8)
@@ -790,22 +886,16 @@ final class FloatingAnswerWindow {
 
         guard visible else { return }
 
-        let accent: NSColor
         if showEnd {
-            sessionActionLabel.stringValue = "End"
-            accent = NSColor(calibratedRed: 1.0, green: 0.45, blue: 0.42, alpha: 1)
+            sessionActionChip.apply(title: "End", accent: NSColor(calibratedRed: 1.0, green: 0.45, blue: 0.42, alpha: 1))
         } else if showSummary || showRecord {
-            sessionActionLabel.stringValue = showRecord ? "Save" : "Summary"
-            accent = NSColor(calibratedRed: 0.95, green: 0.78, blue: 0.38, alpha: 1)
+            sessionActionChip.apply(
+                title: showRecord ? "Save" : "Summary",
+                accent: NSColor(calibratedRed: 0.95, green: 0.78, blue: 0.38, alpha: 1)
+            )
         } else {
-            sessionActionLabel.stringValue = "Start"
-            accent = NSColor(calibratedRed: 0.42, green: 0.86, blue: 0.68, alpha: 1)
+            sessionActionChip.apply(title: "Start", accent: NSColor(calibratedRed: 0.42, green: 0.86, blue: 0.68, alpha: 1))
         }
-        sessionActionChip.layer?.backgroundColor = accent.withAlphaComponent(0.18).cgColor
-        sessionActionChip.layer?.borderColor = accent.withAlphaComponent(0.55).cgColor
-        sessionActionLabel.textColor = accent.blended(withFraction: 0.22, of: .white) ?? accent
-        sessionActionChip.invalidateIntrinsicContentSize()
-        sessionActionLabel.invalidateIntrinsicContentSize()
     }
 
     private func handleSessionActionTap() {
@@ -962,17 +1052,63 @@ final class FloatingAnswerWindow {
     }
 
     private func handleHover(_ hovering: Bool) {
-        collapseWork?.cancel()
+        if pinsExpanded {
+            return
+        }
         if hovering {
+            wantsHoverCollapse = false
+            collapseWork?.cancel()
             applyExpanded(true, animated: true)
             return
         }
 
+        wantsHoverCollapse = true
+        scheduleCollapseIfNeeded()
+    }
+
+    private func scheduleCollapseIfNeeded() {
+        if pinsExpanded { return }
+        collapseWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            self?.applyExpanded(false, animated: true)
+            guard let self else { return }
+            if self.pinsExpanded { return }
+            if NSEvent.pressedMouseButtons != 0 {
+                self.scheduleCollapseIfNeeded()
+                return
+            }
+            if self.isMouseOverHUD() {
+                self.wantsHoverCollapse = false
+                if !self.isExpanded {
+                    self.applyExpanded(true, animated: true)
+                }
+                return
+            }
+            guard self.wantsHoverCollapse, self.isExpanded else { return }
+            self.wantsHoverCollapse = false
+            self.applyExpanded(false, animated: true)
         }
         collapseWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+    }
+
+    private func reconcileHoverState() {
+        if pinsExpanded { return }
+        if isMouseOverHUD() {
+            wantsHoverCollapse = false
+            collapseWork?.cancel()
+            if !isExpanded {
+                applyExpanded(true, animated: true)
+            }
+            return
+        }
+        if wantsHoverCollapse, isExpanded {
+            scheduleCollapseIfNeeded()
+        }
+    }
+
+    private func isMouseOverHUD() -> Bool {
+        guard let panel, panel.isVisible else { return false }
+        return panel.frame.insetBy(dx: -8, dy: -8).contains(NSEvent.mouseLocation)
     }
 
     private func collapsedCardWidth() -> CGFloat {
@@ -985,7 +1121,7 @@ final class FloatingAnswerWindow {
             : modeLabel.intrinsicContentSize.width + 20 + 8
         let sessionWidth: CGFloat = {
             guard !sessionActionChip.isHidden else { return 0 }
-            let labelWidth = max(sessionActionLabel.intrinsicContentSize.width, 28)
+            let labelWidth = max(sessionActionChip.intrinsicContentSize.width, 48)
             return labelWidth + 20 + 9
         }()
         let fitted = 16 + 38 + 12 + textWidth + 12 + modeWidth + sessionWidth + 28 + 14 + 16
@@ -994,19 +1130,29 @@ final class FloatingAnswerWindow {
 
     private func applyExpanded(_ expanded: Bool, animated: Bool) {
         guard let panel else { return }
-
+        if pinsExpanded, !expanded {
+            return
+        }
         if expanded, isExpanded {
             return
         }
+
         isExpanded = expanded
-        hairline.isHidden = !expanded
-        scrollView.isHidden = !expanded
+        hoverGeneration += 1
+        let generation = hoverGeneration
+        isApplyingHoverLayout = true
+
         let showActions = expanded && actionBarHeightConstraint?.constant ?? 0 > 0
-        actionBar.isHidden = !showActions
+        headerBottomConstraint?.isActive = !expanded
         scrollBottomConstraint?.isActive = expanded && !showActions
         scrollToActionBarConstraint?.isActive = showActions
         actionBarBottomConstraint?.isActive = showActions
-        headerBottomConstraint?.isActive = !expanded
+
+        if expanded {
+            hairline.isHidden = false
+            scrollView.isHidden = false
+            actionBar.isHidden = !showActions
+        }
 
         let cardWidth = expanded ? expandedSize.width : collapsedCardWidth()
         let cardHeight = expanded ? max(expandedSize.height, expandedMinHeight) : collapsedHeight
@@ -1016,8 +1162,8 @@ final class FloatingAnswerWindow {
             panel.minSize = windowSize(cardWidth: 320, cardHeight: expandedMinHeight)
             panel.maxSize = NSSize(width: 10_000, height: 10_000)
         } else {
-            panel.minSize = nextSize
-            panel.maxSize = nextSize
+            panel.minSize = NSSize(width: 120, height: 60)
+            panel.maxSize = NSSize(width: 10_000, height: 10_000)
         }
 
         let current = panel.frame
@@ -1025,47 +1171,77 @@ final class FloatingAnswerWindow {
         next.size = nextSize
         next.origin.x = current.maxX - nextSize.width
         next.origin.y = current.maxY - nextSize.height
-        next = pinnedToScreen(next)
+        next = keepOnScreenPreservingCorner(next)
+
+        let targetBodyAlpha: CGFloat = expanded ? 1 : 0
+        if !animated, expanded {
+            scrollView.alphaValue = 1
+            actionBar.alphaValue = 1
+            hairline.alphaValue = 1
+        } else if expanded, scrollView.alphaValue < 0.05 {
+            scrollView.alphaValue = 0
+            actionBar.alphaValue = 0
+            hairline.alphaValue = 0
+        }
 
         let finish = {
+            guard generation == self.hoverGeneration else { return }
             panel.contentView?.layoutSubtreeIfNeeded()
             self.updateTextViewWidth()
             if expanded {
                 self.textView.scrollToBeginningOfDocument(nil)
+                self.scrollView.alphaValue = 1
+                self.actionBar.alphaValue = 1
+                self.hairline.alphaValue = 1
+            } else {
+                self.hairline.isHidden = true
+                self.scrollView.isHidden = true
+                self.actionBar.isHidden = true
+                self.panel?.minSize = nextSize
+                self.panel?.maxSize = nextSize
             }
+            self.isApplyingHoverLayout = false
+            self.reconcileHoverState()
         }
 
         if animated {
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.22
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                context.duration = expanded ? 0.28 : 0.22
+                context.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
+                context.allowsImplicitAnimation = true
                 panel.animator().setFrame(next, display: true)
+                self.scrollView.animator().alphaValue = targetBodyAlpha
+                self.actionBar.animator().alphaValue = targetBodyAlpha
+                self.hairline.animator().alphaValue = targetBodyAlpha
             } completionHandler: {
                 finish()
             }
         } else {
             panel.setFrame(next, display: true)
+            scrollView.alphaValue = targetBodyAlpha
+            actionBar.alphaValue = targetBodyAlpha
+            hairline.alphaValue = targetBodyAlpha
             finish()
         }
     }
 
-    private func pinnedToScreen(_ frame: NSRect) -> NSRect {
+    private func keepOnScreenPreservingCorner(_ frame: NSRect) -> NSRect {
         guard let visible = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame else {
             return frame
         }
 
         var next = frame
-        if next.maxX > visible.maxX - 12 {
-            next.origin.x = visible.maxX - next.width - 24
+        if next.origin.x < visible.minX + 8 {
+            next.origin.x = visible.minX + 8
         }
-        if next.origin.x < visible.minX + 12 {
-            next.origin.x = visible.minX + 24
+        if next.origin.y < visible.minY + 8 {
+            next.origin.y = visible.minY + 8
         }
-        if next.maxY > visible.maxY - 12 {
-            next.origin.y = visible.maxY - next.height - 24
+        if next.maxX > visible.maxX {
+            next.origin.x = visible.maxX - next.width
         }
-        if next.origin.y < visible.minY + 12 {
-            next.origin.y = visible.minY + 12
+        if next.maxY > visible.maxY {
+            next.origin.y = visible.maxY - next.height
         }
         return next
     }
@@ -1110,7 +1286,7 @@ private final class ClearRootView: NSView {
         guard let cardView else {
             return super.hitTest(point)
         }
-        let local = convert(point, to: cardView)
+        let local = cardView.convert(point, from: superview)
         let path = NSBezierPath(roundedRect: cardView.bounds, xRadius: cornerRadius, yRadius: cornerRadius)
         guard path.contains(local) else {
             return nil
@@ -1148,10 +1324,180 @@ private final class ShadowHostView: NSView {
     }
 }
 
+private final class HUDConfirmOverlay: NSView {
+    private let dim = HUDClickRegion()
+    private let card = HUDClickRegion()
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let messageLabel = NSTextField(labelWithString: "")
+    private let cancelButton = HUDPillButton()
+    private let confirmButton = HUDPillButton()
+    private var confirmHandler: (() -> Void)?
+    private var cancelHandler: (() -> Void)?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        translatesAutoresizingMaskIntoConstraints = false
+
+        dim.wantsLayer = true
+        dim.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.46).cgColor
+        dim.translatesAutoresizingMaskIntoConstraints = false
+        dim.onMouseUp = { [weak self] in self?.cancelHandler?() }
+
+        card.wantsLayer = true
+        card.layer?.backgroundColor = NSColor(calibratedWhite: 0.12, alpha: 0.96).cgColor
+        card.layer?.cornerRadius = 16
+        card.layer?.cornerCurve = .continuous
+        card.layer?.borderWidth = 1
+        card.layer?.borderColor = NSColor.white.withAlphaComponent(0.14).cgColor
+        card.translatesAutoresizingMaskIntoConstraints = false
+
+        titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
+        titleLabel.textColor = GlassPalette.title
+        titleLabel.alignment = .center
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        messageLabel.font = .systemFont(ofSize: 13)
+        messageLabel.textColor = GlassPalette.muted
+        messageLabel.alignment = .center
+        messageLabel.maximumNumberOfLines = 4
+        messageLabel.lineBreakMode = .byWordWrapping
+        messageLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        cancelButton.apply(title: "Cancel", style: .quiet)
+        cancelButton.onTap = { [weak self] in self?.cancelHandler?() }
+        confirmButton.onTap = { [weak self] in self?.confirmHandler?() }
+
+        addSubview(dim)
+        addSubview(card)
+        card.addSubview(titleLabel)
+        card.addSubview(messageLabel)
+        card.addSubview(cancelButton)
+        card.addSubview(confirmButton)
+
+        NSLayoutConstraint.activate([
+            dim.topAnchor.constraint(equalTo: topAnchor),
+            dim.leadingAnchor.constraint(equalTo: leadingAnchor),
+            dim.trailingAnchor.constraint(equalTo: trailingAnchor),
+            dim.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+            card.centerXAnchor.constraint(equalTo: centerXAnchor),
+            card.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 8),
+            card.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 22),
+            card.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -22),
+            card.widthAnchor.constraint(lessThanOrEqualToConstant: 340),
+
+            titleLabel.topAnchor.constraint(equalTo: card.topAnchor, constant: 18),
+            titleLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
+            titleLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
+
+            messageLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
+            messageLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
+            messageLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
+            messageLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 240),
+
+            cancelButton.topAnchor.constraint(equalTo: messageLabel.bottomAnchor, constant: 16),
+            cancelButton.trailingAnchor.constraint(equalTo: card.centerXAnchor, constant: -6),
+            cancelButton.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -16),
+            cancelButton.heightAnchor.constraint(equalToConstant: HUDPillButton.height),
+
+            confirmButton.topAnchor.constraint(equalTo: cancelButton.topAnchor),
+            confirmButton.leadingAnchor.constraint(equalTo: card.centerXAnchor, constant: 6),
+            confirmButton.heightAnchor.constraint(equalToConstant: HUDPillButton.height)
+        ])
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        isHidden ? nil : super.hitTest(point)
+    }
+
+    func present(
+        title: String,
+        message: String,
+        confirmTitle: String,
+        style: HUDActionStyle,
+        onConfirm: @escaping () -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        titleLabel.stringValue = title
+        messageLabel.stringValue = message
+        confirmButton.apply(title: confirmTitle, style: style)
+        confirmHandler = onConfirm
+        cancelHandler = onCancel
+        alphaValue = 0
+        isHidden = false
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.16
+            animator().alphaValue = 1
+        }
+    }
+
+    func dismiss() {
+        confirmHandler = nil
+        cancelHandler = nil
+        isHidden = true
+        alphaValue = 1
+    }
+}
+
+private final class HUDDragRegion: NSView {
+    override var mouseDownCanMoveWindow: Bool { true }
+}
+
+private final class HUDClickRegion: NSView {
+    var onMouseUp: (() -> Void)?
+
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    override func mouseUp(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if bounds.contains(point) {
+            onMouseUp?()
+        }
+    }
+}
+
+private final class HUDPassthroughView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override var mouseDownCanMoveWindow: Bool { true }
+}
+
+private final class HUDPassthroughImageView: NSImageView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override var mouseDownCanMoveWindow: Bool { true }
+}
+
+private final class HUDPassthroughLabel: NSTextField {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        isBezeled = false
+        isEditable = false
+        isSelectable = false
+        drawsBackground = false
+        backgroundColor = .clear
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    convenience init(text: String) {
+        self.init(frame: .zero)
+        stringValue = text
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override var mouseDownCanMoveWindow: Bool { true }
+}
+
 private final class HoverView: NSVisualEffectView {
     var onHoverChange: ((Bool) -> Void)?
     var cornerRadius: CGFloat = 22
     private var trackingArea: NSTrackingArea?
+
+    override var mouseDownCanMoveWindow: Bool { true }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -1202,7 +1548,7 @@ private final class HoverView: NSVisualEffectView {
         }
         let area = NSTrackingArea(
             rect: bounds,
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect, .enabledDuringMouseDrag],
             owner: self,
             userInfo: nil
         )
@@ -1215,6 +1561,10 @@ private final class HoverView: NSVisualEffectView {
     }
 
     override func mouseExited(with event: NSEvent) {
+        let mouseInView = convert(event.locationInWindow, from: nil)
+        if bounds.insetBy(dx: -6, dy: -6).contains(mouseInView) {
+            return
+        }
         onHoverChange?(false)
     }
 }
@@ -1225,10 +1575,87 @@ private final class PassthroughOverlay: NSView {
     }
 }
 
+private final class HUDHeaderChip: NSView {
+    var onTap: (() -> Void)?
+
+    private let titleLabel = NSTextField(labelWithString: "")
+    private var accent = NSColor.white
+    private var isPressed = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 11
+        layer?.cornerCurve = .continuous
+        layer?.borderWidth = 1
+        translatesAutoresizingMaskIntoConstraints = false
+        setContentCompressionResistancePriority(.required, for: .horizontal)
+        setContentHuggingPriority(.required, for: .horizontal)
+
+        titleLabel.font = .systemFont(ofSize: 10.5, weight: .semibold)
+        titleLabel.alignment = .center
+        titleLabel.drawsBackground = false
+        titleLabel.isBezeled = false
+        titleLabel.isEditable = false
+        titleLabel.isSelectable = false
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(titleLabel)
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor)
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    override var intrinsicContentSize: NSSize {
+        let textWidth = ceil(titleLabel.intrinsicContentSize.width)
+        return NSSize(width: max(48, textWidth + 20), height: 24)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        isHidden ? nil : (frame.contains(point) ? self : nil)
+    }
+
+    func apply(title: String, accent: NSColor) {
+        self.accent = accent
+        titleLabel.stringValue = title
+        titleLabel.textColor = accent.blended(withFraction: 0.22, of: .white) ?? accent
+        paint()
+        invalidateIntrinsicContentSize()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        isPressed = true
+        paint()
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let inside = bounds.contains(convert(event.locationInWindow, from: nil))
+        isPressed = false
+        paint()
+        if inside {
+            onTap?()
+        }
+    }
+
+    private func paint() {
+        let alpha: CGFloat = isPressed ? 0.32 : 0.18
+        layer?.backgroundColor = accent.withAlphaComponent(alpha).cgColor
+        layer?.borderColor = accent.withAlphaComponent(0.55).cgColor
+    }
+}
+
 private enum HUDActionStyle {
     case primary
     case save
     case accent
+    case quiet
 }
 
 private final class HUDPillButton: NSView {
@@ -1280,6 +1707,12 @@ private final class HUDPillButton: NSView {
         return NSSize(width: max(84, textWidth + 28), height: Self.height)
     }
 
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        isHidden ? nil : (frame.contains(point) ? self : nil)
+    }
+
     func apply(title: String, style: HUDActionStyle) {
         titleLabel.stringValue = title
         switch style {
@@ -1289,6 +1722,8 @@ private final class HUDPillButton: NSView {
             fillColor = NSColor(calibratedRed: 0.20, green: 0.70, blue: 0.60, alpha: 1)
         case .accent:
             fillColor = NSColor(calibratedRed: 0.94, green: 0.56, blue: 0.28, alpha: 1)
+        case .quiet:
+            fillColor = NSColor.white.withAlphaComponent(0.18)
         }
         paint()
         invalidateIntrinsicContentSize()

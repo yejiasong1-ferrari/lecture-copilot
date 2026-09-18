@@ -15,6 +15,10 @@ struct DoubaoUploadResult {
             return "已经贴上截图，但豆包没有发出去。请看一眼豆包窗口后再试。"
         case "Doubao is not running":
             return "豆包没有在运行。"
+        case "Doubao is not frontmost":
+            return "没有切到豆包窗口，这次没有发送，以免发到当前正在用的软件。请把豆包窗口打开后再试。"
+        case "Doubao window not visible":
+            return "看得到豆包在运行，但找不到它的聊天窗口，这次没有发送。"
         case "image missing":
             return "没有找到要发送的截图。"
         default:
@@ -62,7 +66,7 @@ final class DoubaoUploadFSM {
         var abortReason = ""
     }
 
-    private let attachDiffThreshold = 0.012
+    private let attachDiffThreshold = 0.008
     private let attachStableThreshold = 0.05
     private let stableDiffThreshold = 0.018
     private let sentDiffThreshold = 0.02
@@ -126,13 +130,19 @@ final class DoubaoUploadFSM {
             return .abort
         }
 
-        app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
-        let frontmost = AXAccess.waitUntil(timeout: 1.2) {
-            NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier
+        guard DoubaoWindow.makeFrontmost(timeout: 5.0) else {
+            job.log.state(
+                "ACTIVATE_DOUBAO",
+                "timeout",
+                extra: "pid=\(app.processIdentifier) front=\(NSWorkspace.shared.frontmostApplication?.localizedName ?? "none")",
+                elapsed: Date().timeIntervalSince(started)
+            )
+            job.abortReason = "Doubao is not frontmost"
+            return .abort
         }
         job.log.state(
             "ACTIVATE_DOUBAO",
-            frontmost ? "success" : "timeout",
+            "success",
             extra: "pid=\(app.processIdentifier)",
             elapsed: Date().timeIntervalSince(started)
         )
@@ -148,11 +158,13 @@ final class DoubaoUploadFSM {
             let axApp = AXUIElementCreateApplication(app.processIdentifier)
             if pressNewChatMenu(in: axApp) {
                 method = "AXMenu"
-            } else {
+            } else if DoubaoWindow.isFrontmost() {
                 postKey(53, flags: [])
                 _ = AXAccess.waitUntil(timeout: 0.05) { false }
                 postKey(45, flags: .maskCommand)
                 method = "Cmd+N"
+            } else {
+                method = "skipped-not-frontmost"
             }
         }
 
@@ -179,7 +191,8 @@ final class DoubaoUploadFSM {
                 skippedFirstTick = true
                 return false
             }
-            return ImageDiff.ratio(previous, current) < stableDiffThreshold
+            guard let diff = ImageDiff.observed(previous, current) else { return false }
+            return diff < stableDiffThreshold
         }
 
         job.log.state(
@@ -201,6 +214,10 @@ final class DoubaoUploadFSM {
             extra: "composer=\(ImageDiff.fingerprint(job.composerBaseline))",
             elapsed: Date().timeIntervalSince(started)
         )
+        guard job.composerBaseline != nil else {
+            job.abortReason = "Doubao window not visible"
+            return .abort
+        }
         if job.imageURL == nil {
             job.attachmentVerified = true
             return .typePrompt
@@ -217,6 +234,9 @@ final class DoubaoUploadFSM {
         }
 
         job.pasteAttempts += 1
+        guard ensureDoubaoReceivesKeys(&job, during: "PASTE_IMAGE") else {
+            return .abort
+        }
         focusComposer()
         _ = AXAccess.waitUntil(timeout: 0.12) { false }
         postKey(9, flags: .maskCommand)
@@ -232,10 +252,12 @@ final class DoubaoUploadFSM {
         var bestDiff = 0.0
         var lastDiff = 0.0
 
-        _ = AXAccess.waitUntil(timeout: 1.25, interval: 0.05) {
+        _ = AXAccess.waitUntil(timeout: 1.8, interval: 0.05) {
             let current = DoubaoWindow.capture(.composer)
             latest = current
-            let diff = ImageDiff.ratio(job.composerBaseline, current)
+            guard let diff = ImageDiff.observed(job.composerBaseline, current) else {
+                return false
+            }
             lastDiff = diff
             bestDiff = max(bestDiff, diff)
             guard diff >= attachDiffThreshold else {
@@ -243,7 +265,7 @@ final class DoubaoUploadFSM {
                 lastMatch = current
                 return false
             }
-            if let lastMatch, ImageDiff.ratio(lastMatch, current) < attachStableThreshold {
+            if let lastMatch, let stable = ImageDiff.observed(lastMatch, current), stable < attachStableThreshold {
                 stableHits += 1
             } else {
                 stableHits = 1
@@ -260,7 +282,7 @@ final class DoubaoUploadFSM {
         // attaching. Treat that as success so we do not Cmd+V a second copy.
         let attached = stableHits >= 2
             || lastDiff >= attachDiffThreshold
-            || (bestDiff >= attachDiffThreshold && lastDiff >= attachDiffThreshold * 0.75)
+            || bestDiff >= attachDiffThreshold
         if attached {
             job.attachmentVerified = true
             job.attachedComposer = latest ?? lastMatch
@@ -289,7 +311,8 @@ final class DoubaoUploadFSM {
         var latest: CGImage?
         let alreadyAttached = AXAccess.waitUntil(timeout: 0.6, interval: 0.05) {
             latest = DoubaoWindow.capture(.composer)
-            return ImageDiff.ratio(job.composerBaseline, latest) >= attachDiffThreshold
+            guard let diff = ImageDiff.observed(job.composerBaseline, latest) else { return false }
+            return diff >= attachDiffThreshold
         }
         if alreadyAttached {
             job.attachmentVerified = true
@@ -312,6 +335,9 @@ final class DoubaoUploadFSM {
         guard job.attachmentVerified else {
             return abort(&job, reason: "ABORT_IMAGE_ATTACH")
         }
+        guard ensureDoubaoReceivesKeys(&job, during: "TYPE_PROMPT") else {
+            return .abort
+        }
 
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
@@ -331,6 +357,9 @@ final class DoubaoUploadFSM {
     private func sendMessage(_ job: inout Job) -> State {
         let started = Date()
         job.sendAttempts += 1
+        guard ensureDoubaoReceivesKeys(&job, during: "SEND") else {
+            return .abort
+        }
         job.preSendConversation = DoubaoWindow.capture(.conversation)
         job.preSendComposer = DoubaoWindow.capture(.composer)
         postKey(36, flags: [])
@@ -341,8 +370,8 @@ final class DoubaoUploadFSM {
     private func verifySent(_ job: inout Job) -> State {
         let started = Date()
         let sent = AXAccess.waitUntil(timeout: job.prompt.count > 600 ? 1.2 : 0.55, interval: 0.05) {
-            let composerChanged = ImageDiff.ratio(job.preSendComposer, DoubaoWindow.capture(.composer)) > sentDiffThreshold
-            let conversationChanged = ImageDiff.ratio(job.preSendConversation, DoubaoWindow.capture(.conversation)) > sentDiffThreshold
+            let composerChanged = ImageDiff.observed(job.preSendComposer, DoubaoWindow.capture(.composer)).map { $0 > sentDiffThreshold } ?? false
+            let conversationChanged = ImageDiff.observed(job.preSendConversation, DoubaoWindow.capture(.conversation)).map { $0 > sentDiffThreshold } ?? false
             return composerChanged || conversationChanged
         }
 
@@ -408,13 +437,31 @@ final class DoubaoUploadFSM {
     }
 
     private func focusComposer() {
-        DoubaoWindow.runningChatApp()?.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+        _ = DoubaoWindow.makeFrontmost(timeout: 1.0)
         if let pid = DoubaoWindow.runningChatApp()?.processIdentifier,
            let composer = findComposer(in: AXUIElementCreateApplication(pid)) {
             _ = AXAccess.setFocused(composer)
             return
         }
         clickComposer()
+    }
+
+    private func ensureDoubaoReceivesKeys(_ job: inout Job, during state: String) -> Bool {
+        let front = NSWorkspace.shared.frontmostApplication
+        if DoubaoWindow.isFrontmost() {
+            return true
+        }
+        let recovered = DoubaoWindow.makeFrontmost(timeout: 1.6)
+        job.log.state(
+            state,
+            recovered ? "refocused" : "blocked",
+            extra: "front=\(front?.localizedName ?? "none") bundle=\(front?.bundleIdentifier ?? "none")"
+        )
+        guard recovered else {
+            job.abortReason = "Doubao is not frontmost"
+            return false
+        }
+        return true
     }
 
     private func findComposer(in axApp: AXUIElement) -> AXUIElement? {

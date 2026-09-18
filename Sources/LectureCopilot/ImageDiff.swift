@@ -3,10 +3,14 @@ import Foundation
 
 enum ImageDiff {
     static func ratio(_ a: CGImage?, _ b: CGImage?) -> Double {
+        observed(a, b) ?? 0
+    }
+
+    static func observed(_ a: CGImage?, _ b: CGImage?) -> Double? {
         guard let a, let b,
               let left = lumaPixels(a, width: 96, height: 56),
               let right = lumaPixels(b, width: 96, height: 56) else {
-            return 1
+            return nil
         }
 
         var sum = 0

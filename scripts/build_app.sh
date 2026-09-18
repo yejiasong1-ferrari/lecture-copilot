@@ -28,6 +28,8 @@ cp "$ROOT/Resources/AppIcon.png" "$RESOURCES/AppIcon.png"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
 xattr -cr "$APP"
+xattr -d com.apple.FinderInfo "$APP" 2>/dev/null || true
+find "$APP" -name '._*' -delete
 codesign --force --deep --sign - --identifier com.local.lecturecopilot "$APP"
 touch "$APP"
 "$LSREGISTER" -f "$APP" >/dev/null
