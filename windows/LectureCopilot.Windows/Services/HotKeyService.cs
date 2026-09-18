@@ -47,6 +47,8 @@ public sealed class HotKeyService : IDisposable
     {
         if (!NativeMethods.RegisterHotKey(_source.Handle, id, NativeMethods.ModShift, (uint)key))
             Logger.Write($"RegisterHotKey failed id={id} error={Marshal.GetLastWin32Error()}");
+        else
+            Logger.Write($"RegisterHotKey ok id={id}");
     }
 
     private IntPtr WindowProc(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)

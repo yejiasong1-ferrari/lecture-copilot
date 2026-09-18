@@ -1,66 +1,73 @@
-using System.Diagnostics;
 using System.Windows;
-using System.Windows.Media.Imaging;
+using LectureCopilot.Windows.Views;
 
 namespace LectureCopilot.Windows.Services;
 
 public sealed class ScreenshotService
 {
-    public async Task<bool> CaptureSelectionAsync()
+    public async Task<bool> CaptureSelectionAsync(Action? revealTarget = null)
     {
-        await Application.Current.Dispatcher.InvokeAsync(() =>
+        var hidden = Array.Empty<Window>();
+        await Application.Current.Dispatcher.InvokeAsync(() => hidden = HideLectureWindows());
+        await Task.Delay(40);
+        try
         {
-            Clipboard.Clear();
-            Process.Start(new ProcessStartInfo("ms-screenclip:") { UseShellExecute = true });
-        });
-        var started = DateTime.UtcNow;
-        while (DateTime.UtcNow - started < TimeSpan.FromSeconds(30))
-        {
-            await Task.Delay(100);
-            var captured = await Application.Current.Dispatcher.InvokeAsync(() =>
+            return await Application.Current.Dispatcher.InvokeAsync(() =>
             {
-                try { return Clipboard.ContainsImage() ? Clipboard.GetImage() : null; }
-                catch { return null; }
-            });
-            if (captured is null) continue;
+                var overlay = new SelectionOverlayWindow { RevealTarget = revealTarget };
+                var accepted = overlay.ShowDialog() == true;
+                if (!accepted || overlay.CapturedPng is null || overlay.CapturedPng.Length == 0)
+                    return false;
+                File.WriteAllBytes(AppPaths.LastCapture, overlay.CapturedPng);
+                Logger.Write($"Region screenshot captured ({overlay.CapturedPng.Length} bytes)");
+                return true;
+            }).Task;
+        }
+        catch (Exception ex)
+        {
+            Logger.Write($"Region screenshot failed: {ex}");
+            return false;
+        }
+        finally
+        {
             await Application.Current.Dispatcher.InvokeAsync(() =>
             {
-                var encoder = new PngBitmapEncoder();
-                encoder.Frames.Add(BitmapFrame.Create(captured));
-                using var output = File.Create(AppPaths.LastCapture);
-                encoder.Save(output);
+                foreach (var window in hidden)
+                {
+                    if (window is HudWindow) continue;
+                    try { window.Show(); } catch { }
+                }
             });
-            Logger.Write("Windows screen clipping captured");
-            return true;
         }
-        return false;
     }
 
     public async Task<bool> CopyLastCaptureAsync()
     {
         if (!File.Exists(AppPaths.LastCapture)) return false;
-        return await Application.Current.Dispatcher.InvokeAsync(() =>
+        try
         {
-            try
-            {
-                using var stream = new FileStream(AppPaths.LastCapture, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                var image = new BitmapImage();
-                image.BeginInit();
-                image.CacheOption = BitmapCacheOption.OnLoad;
-                image.StreamSource = stream;
-                image.EndInit();
-                image.Freeze();
-                Clipboard.SetImage(image);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Logger.Write($"Copy screenshot failed: {ex.Message}");
-                return false;
-            }
-        });
+            await ClipboardService.SetPngFileAsync(AppPaths.LastCapture);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Write($"Copy screenshot failed: {ex.Message}");
+            return false;
+        }
     }
 
     public bool HasFreshCapture(TimeSpan maxAge) => File.Exists(AppPaths.LastCapture)
         && DateTime.UtcNow - File.GetLastWriteTimeUtc(AppPaths.LastCapture) <= maxAge;
+
+    private static Window[] HideLectureWindows()
+    {
+        var hidden = new List<Window>();
+        foreach (Window window in Application.Current.Windows)
+        {
+            if (!window.IsVisible || window is SelectionOverlayWindow) continue;
+            window.Hide();
+            hidden.Add(window);
+        }
+        return hidden.ToArray();
+    }
 }

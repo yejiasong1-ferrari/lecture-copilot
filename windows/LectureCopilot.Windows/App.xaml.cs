@@ -12,10 +12,32 @@ public partial class App : System.Windows.Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        NativeMethods.SetProcessDpiAwarenessContext(NativeMethods.DpiAwarenessContextPerMonitorAwareV2);
         base.OnStartup(e);
+        if (e.Args.Length == 2 && e.Args[0] == "--verify-read")
+        {
+            _ = UiPreview.VerifyReadAsync(e.Args[1]);
+            return;
+        }
+        if (e.Args.Length == 2 && e.Args[0] == "--preview-ui")
+        {
+            UiPreview.Write(e.Args[1]);
+            Shutdown();
+            return;
+        }
         if (e.Args.Contains("--self-test", StringComparer.OrdinalIgnoreCase))
         {
             Environment.Exit(SelfTest.Run());
+            return;
+        }
+        if (e.Args.Contains("--diagnose-doubao", StringComparer.OrdinalIgnoreCase))
+        {
+            Environment.Exit(DoubaoDiagnostics.Run());
+            return;
+        }
+        if (e.Args.Contains("--diagnose-upload-menu", StringComparer.OrdinalIgnoreCase))
+        {
+            Environment.Exit(DoubaoDiagnostics.RunUploadMenu());
             return;
         }
         _singleInstance = new Mutex(true, "LectureCopilot.Windows.SingleInstance", out var created);

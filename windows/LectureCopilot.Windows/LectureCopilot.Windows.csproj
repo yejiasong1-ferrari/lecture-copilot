@@ -19,10 +19,13 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <DebugType>embedded</DebugType>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <DefaultItemExcludes>$(DefaultItemExcludes);**/._*</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
     <Resource Include="Assets\AppIcon.png" />
     <Resource Include="Assets\HUDIcon.png" />
+    <Resource Include="Assets\copy-icon-template.png" />
   </ItemGroup>
 </Project>

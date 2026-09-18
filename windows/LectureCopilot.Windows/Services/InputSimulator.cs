@@ -4,18 +4,26 @@ public static class InputSimulator
 {
     private const uint MouseLeftDown = 0x0002;
     private const uint MouseLeftUp = 0x0004;
+    private const uint MouseWheel = 0x0800;
 
-    public static void Chord(int modifier, int key)
+    public static void ScrollDown(int x, int y, int notches)
     {
-        KeyDown(modifier);
-        Press(key);
-        KeyUp(modifier);
+        NativeMethods.SetCursorPos(x, y);
+        NativeMethods.mouse_event(MouseWheel, 0, 0, unchecked((uint)(-120 * notches)), UIntPtr.Zero);
     }
 
-    public static void Press(int key)
+    public static bool Chord(int modifier, int key)
     {
-        KeyDown(key);
-        KeyUp(key);
+        if (!KeyDown(modifier)) return false;
+        var pressed = Press(key);
+        var released = KeyUp(modifier);
+        return pressed && released;
+    }
+
+    public static bool Press(int key)
+    {
+        if (!KeyDown(key)) return false;
+        return KeyUp(key);
     }
 
     public static void Click(int x, int y)
@@ -35,13 +43,17 @@ public static class InputSimulator
             inputs.Add(Unicode(character, true));
         }
         if (inputs.Count > 0)
-            NativeMethods.SendInput((uint)inputs.Count, inputs.ToArray(), System.Runtime.InteropServices.Marshal.SizeOf<NativeMethods.Input>());
+        {
+            var sent = NativeMethods.SendInput((uint)inputs.Count, inputs.ToArray(), System.Runtime.InteropServices.Marshal.SizeOf<NativeMethods.Input>());
+            if (sent != inputs.Count)
+                Logger.Write($"Unicode input failed sent={sent}/{inputs.Count} error={System.Runtime.InteropServices.Marshal.GetLastWin32Error()}");
+        }
     }
 
-    private static void KeyDown(int key) => SendVirtualKey(key, false);
-    private static void KeyUp(int key) => SendVirtualKey(key, true);
+    private static bool KeyDown(int key) => SendVirtualKey(key, false);
+    private static bool KeyUp(int key) => SendVirtualKey(key, true);
 
-    private static void SendVirtualKey(int key, bool up)
+    private static bool SendVirtualKey(int key, bool up)
     {
         var input = new NativeMethods.Input
         {
@@ -51,7 +63,10 @@ public static class InputSimulator
                 Keyboard = new NativeMethods.KeyboardInput { Vk = (ushort)key, Flags = up ? NativeMethods.KeyEventFKeyUp : 0 }
             }
         };
-        NativeMethods.SendInput(1, [input], System.Runtime.InteropServices.Marshal.SizeOf<NativeMethods.Input>());
+        if (NativeMethods.SendInput(1, [input], System.Runtime.InteropServices.Marshal.SizeOf<NativeMethods.Input>()) == 1)
+            return true;
+        Logger.Write($"Keyboard input failed key=0x{key:X} up={up} error={System.Runtime.InteropServices.Marshal.GetLastWin32Error()}");
+        return false;
     }
 
     private static NativeMethods.Input Unicode(char character, bool up) => new()

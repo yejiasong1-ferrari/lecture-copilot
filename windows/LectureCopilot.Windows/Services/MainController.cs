@@ -46,7 +46,7 @@ public sealed class MainController : IDisposable
         _hotKeys.Start();
         PresentSession();
         RenderTray();
-        _ = _doubao.EnsureRunningAsync(false);
+        _ = EnsureDoubaoAtLaunchAsync();
     }
 
     private void BindEvents()
@@ -58,6 +58,7 @@ public sealed class MainController : IDisposable
         _hud.ReviewNote += ReviewNote;
         _hud.SaveNote += SaveNote;
         _hud.NewClass += NewClass;
+        _hud.OpenDoubao += () => _ = EnsureDoubaoAtLaunchAsync(true);
         _tray.ToggleClassMode += ToggleClassMode;
         _tray.RunAction += action => _ = RunActionAsync(action);
         _tray.ReadAnswer += () => _ = ReadPendingAsync();
@@ -68,7 +69,8 @@ public sealed class MainController : IDisposable
         _tray.SaveNote += SaveNote;
         _tray.NewClass += NewClass;
         _tray.ToggleRecordTranslate += ToggleRecordTranslate;
-        _tray.OpenDoubao += () => _ = _doubao.EnsureRunningAsync(true);
+        _tray.ToggleReturnToPreviousApp += ToggleReturnToPreviousApp;
+        _tray.OpenDoubao += () => _ = EnsureDoubaoAtLaunchAsync(true);
         _tray.OpenPrompts += () => ForegroundWindowService.OpenPath(_prompts.EnsureFile());
         _tray.OpenLastAnswer += () => { if (File.Exists(AppPaths.LastAnswer)) ForegroundWindowService.OpenPath(AppPaths.LastAnswer); };
         _tray.OpenNotesFolder += () => ForegroundWindowService.OpenPath(AppPaths.NotesDirectory);
@@ -78,9 +80,42 @@ public sealed class MainController : IDisposable
         _tray.Quit += () => Application.Current.Shutdown();
     }
 
+    private async Task EnsureDoubaoAtLaunchAsync(bool activate = false)
+    {
+        if (_doubao.IsRunning)
+        {
+            Logger.Write("Doubao already running at launch");
+            _hud.SetDoubaoReady(true);
+            if (activate) await _doubao.EnsureRunningAsync(true);
+            return;
+        }
+
+        Logger.Write("Doubao not running at launch; checking client");
+        if (!activate) _foreground.RememberUnlessDoubao();
+        _hud.SetDoubaoReady(false, launching: true);
+        var ok = await _doubao.EnsureRunningAsync(activate);
+        Logger.Write(ok
+            ? "Doubao became available"
+            : "Doubao was not available; HUD will show Open Doubao");
+        _hud.SetDoubaoReady(ok);
+        if (!activate)
+        {
+            await Task.Delay(250);
+            _foreground.Restore();
+        }
+    }
+
     private void HandleHotKey(HotKeyEvent key)
     {
-        if (!_settings.ClassModeEnabled) return;
+        Logger.Write($"Hotkey {key}");
+        if (!_settings.ClassModeEnabled)
+        {
+            _settings.ClassModeEnabled = true;
+            _settings.Save();
+            RenderTray();
+            _hud.Reveal();
+            Logger.Write("Class mode was off; turned it on from the hotkey");
+        }
         switch (key)
         {
             case HotKeyEvent.ShiftLeft: _ = RunActionAsync(CopilotAction.Translate); break;
@@ -114,7 +149,12 @@ public sealed class MainController : IDisposable
 
     private async Task RunActionAsync(CopilotAction action, bool useLastCapture = false)
     {
-        if (_busy || !_settings.ClassModeEnabled) return;
+        if (_busy)
+        {
+            Logger.Write($"Hotkey {action} ignored because a capture/send is already running");
+            return;
+        }
+        if (!_settings.ClassModeEnabled) return;
         if (action == CopilotAction.BackToClass) { _foreground.Restore(); return; }
         var key = action.PromptKey();
         if (key is null) return;
@@ -124,12 +164,10 @@ public sealed class MainController : IDisposable
             _foreground.RememberUnlessDoubao();
             var prompt = _prompts.Get(key);
             bool captured;
-            if (action == CopilotAction.SayInClass && _screenshot.HasFreshCapture(TimeSpan.FromSeconds(30)))
-                captured = await _screenshot.CopyLastCaptureAsync();
-            else if (useLastCapture)
+            if (useLastCapture)
                 captured = await _screenshot.CopyLastCaptureAsync();
             else
-                captured = await _screenshot.CaptureSelectionAsync();
+                captured = await _screenshot.CaptureSelectionAsync(_doubao.ForceForeground);
             if (!captured)
             {
                 _hud.ShowLoading("Screenshot was cancelled.", action);
@@ -138,12 +176,21 @@ public sealed class MainController : IDisposable
 
             _pendingRead = null;
             _hud.ShowLoading("Sending screenshot to Doubao…", action);
-            var result = await _doubao.SendImageAndPromptAsync(prompt);
-            _foreground.Restore();
-            if (!result.Success) { _hud.ShowAnswer(result.Message, action); return; }
+            var result = await _doubao.SendImageAndPromptAsync(prompt,
+                _settings.ReturnToPreviousApp ? _foreground.Restore : null);
+            if (!result.Success)
+            {
+                _hud.ShowAnswer(result.Message, action);
+                return;
+            }
             _pendingRead = new PendingRead(prompt, action, DateTimeOffset.UtcNow.AddMinutes(3));
             _pendingInteraction = _sessions.BeginInteraction(action);
-            _hud.ShowLoading("已发送到豆包。生成完成后按 Shift + Return，会切到豆包并复制回答。", action);
+            _hud.ShowLoading(_settings.ReturnToPreviousApp
+                ? "已发送到豆包。生成完成后按 Shift + Return 读取。"
+                : "已发送到豆包。生成完成后按 Shift + Return 读取，Shift + Down 回课堂。", action);
+            Logger.Write(_settings.ReturnToPreviousApp
+                ? "Classroom window restored immediately after submit"
+                : "Keeping Doubao in front after send");
             RenderTray();
         }
         catch (Exception ex)
@@ -158,19 +205,21 @@ public sealed class MainController : IDisposable
     private async Task ReadPendingAsync()
     {
         if (_busy || _pendingRead is null || _pendingRead.ExpiresAt < DateTimeOffset.UtcNow) return;
-        if (_lastExtractAt is { } last && DateTimeOffset.UtcNow - last < TimeSpan.FromSeconds(5)) return;
+        if (_lastExtractAt is { } last && DateTimeOffset.UtcNow - last < TimeSpan.FromSeconds(5))
+        {
+            Logger.Write("Shift+Enter ignored (5s cooldown)");
+            return;
+        }
         _lastExtractAt = DateTimeOffset.UtcNow;
         _busy = true;
         var pending = _pendingRead;
         try
         {
             _foreground.RememberUnlessDoubao();
-            _hud.ShowLoading("Reading Doubao answer…", pending.Action);
             var answer = await _doubao.CopyLatestAnswerAsync(pending.Prompt);
-            _foreground.Restore();
             if (string.IsNullOrWhiteSpace(answer))
             {
-                _hud.ShowAnswer("Still generating…\n\n豆包可能还在生成，或 Copy 按钮尚未出现。稍后再按一次 Shift + Return。", pending.Action);
+                _hud.ShowLoading("豆包还在生成。已返回课堂。5 秒后再按一次 Shift+Enter。", pending.Action);
                 return;
             }
             File.WriteAllText(AppPaths.LastAnswer, answer, Encoding.UTF8);
@@ -190,10 +239,13 @@ public sealed class MainController : IDisposable
         catch (Exception ex)
         {
             Logger.Write($"Read answer failed: {ex}");
-            _foreground.Restore();
-            _hud.ShowAnswer("Still generating…\n\nCopy 没有更新剪贴板，请稍后再按 Shift + Return。", pending.Action);
+            _hud.ShowAnswer("Could not read answer\n\n读取失败，请稍后再按 Shift + Return。", pending.Action);
         }
-        finally { _busy = false; }
+        finally
+        {
+            _foreground.Restore();
+            _busy = false;
+        }
     }
 
     private void ToggleClassMode()
@@ -239,11 +291,10 @@ public sealed class MainController : IDisposable
             var prompt = _prompts.Get("classSummary") + "\n\n" + _sessions.SummaryPayload();
             var snapshot = _sessions.Snapshot() with { Phase = SessionPhase.Summarizing };
             _hud.ShowSession(snapshot);
-            var result = await _doubao.SendTextAsync(prompt);
-            _foreground.Restore();
+            var result = await _doubao.SendTextAsync(prompt, _foreground.Restore);
             if (!result.Success) { _hud.ShowAnswer(result.Message, CopilotAction.ClassSummary); return; }
             _pendingRead = new PendingRead(prompt, CopilotAction.ClassSummary, DateTimeOffset.UtcNow.AddMinutes(8));
-            _hud.ShowLoading("已发给豆包做总结。生成完成后按 Shift + Return，会切到豆包并复制。", CopilotAction.ClassSummary);
+            _hud.ShowLoading("已发给豆包做总结。生成完成后按 Shift + Return 读取。", CopilotAction.ClassSummary);
         }
         catch (Exception ex) { Logger.Write($"Summary failed: {ex}"); }
         finally { _busy = false; RenderTray(); }
@@ -291,6 +342,13 @@ public sealed class MainController : IDisposable
         RenderTray();
     }
 
+    private void ToggleReturnToPreviousApp()
+    {
+        _settings.ReturnToPreviousApp = !_settings.ReturnToPreviousApp;
+        _settings.Save();
+        RenderTray();
+    }
+
     private static void ShowShortcuts() => MessageBox.Show("""
         Class Mode ON 时可用：
 
@@ -310,7 +368,8 @@ public sealed class MainController : IDisposable
     }
 
     private void RenderTray() => _tray.Update(new TrayState(_settings.ClassModeEnabled, IsSessionRunning,
-        IsAwaitingSummary, IsSummaryReady, _sessions.RecordTranslate, _sessions.Session?.RecordedCount ?? 0));
+        IsAwaitingSummary, IsSummaryReady, _sessions.RecordTranslate, _sessions.Session?.RecordedCount ?? 0,
+        _settings.ReturnToPreviousApp));
 
     public void Dispose()
     {

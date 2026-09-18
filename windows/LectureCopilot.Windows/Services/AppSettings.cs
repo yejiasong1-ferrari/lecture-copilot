@@ -6,6 +6,7 @@ public sealed class AppSettings
 {
     public bool ClassModeEnabled { get; set; } = true;
     public bool RecordTranslate { get; set; }
+    public bool ReturnToPreviousApp { get; set; } = true;
 
     public static AppSettings Load()
     {

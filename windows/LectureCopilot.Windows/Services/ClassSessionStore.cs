@@ -15,7 +15,38 @@ public sealed class ClassSessionStore
         set { _settings.RecordTranslate = value; _settings.Save(); }
     }
 
-    public ClassSessionStore(AppSettings settings) => _settings = settings;
+    public ClassSessionStore(AppSettings settings)
+    {
+        _settings = settings;
+        try
+        {
+            var dismissedPath = Path.Combine(AppPaths.SupportDirectory, "dismissed-session.txt");
+            var dismissed = File.Exists(dismissedPath) ? File.ReadAllText(dismissedPath).Trim() : "";
+            var latest = Directory.EnumerateFiles(AppPaths.SessionsDirectory, "session.json", SearchOption.AllDirectories)
+                .Select(path => new FileInfo(path))
+                .Where(file => DateTime.UtcNow - file.LastWriteTimeUtc < TimeSpan.FromHours(24)
+                    && !string.Equals(file.Directory?.Name, dismissed, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(file => file.LastWriteTimeUtc)
+                .FirstOrDefault();
+            if (latest is null) return;
+            var session = JsonSerializer.Deserialize<ClassSession>(File.ReadAllText(latest.FullName));
+            if (session?.SavePath is not null) return;
+            Session = session;
+            var repaired = false;
+            foreach (var note in Session!.Interactions)
+            {
+                if (string.IsNullOrWhiteSpace(note.Answer)) continue;
+                var cleaned = AnswerTextCleaner.Clean(note.Answer, note.Prompt);
+                if (cleaned.Length >= 8 && cleaned.Length < note.Answer.Length)
+                {
+                    note.Answer = cleaned;
+                    repaired = true;
+                }
+            }
+            if (repaired) Persist();
+        }
+        catch (Exception ex) { Logger.Write($"Could not restore class session: {ex.Message}"); }
+    }
 
     public ClassSession Start()
     {
@@ -31,7 +62,12 @@ public sealed class ClassSessionStore
         Persist();
     }
 
-    public void Clear() => Session = null;
+    public void Clear()
+    {
+        if (Session is not null)
+            File.WriteAllText(Path.Combine(AppPaths.SupportDirectory, "dismissed-session.txt"), Session.Id.ToString());
+        Session = null;
+    }
 
     public Guid? BeginInteraction(CopilotAction action)
     {
